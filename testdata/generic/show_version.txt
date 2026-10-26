@@ -1,0 +1,8 @@
+Cisco IOS Software, Version 1.0
+ROM: Bootstrap program is placeholder
+
+dev1 uptime is 1 week, 2 days, 3 hours, 4 minutes
+System image file is "flash:image.bin"
+
+Base ethernet MAC Address       : 00:00:5e:00:53:01
+Processor board ID SERIAL0001
