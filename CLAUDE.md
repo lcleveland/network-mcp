@@ -11,3 +11,7 @@ Default labels: `needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-huma
 ### Domain docs
 
 Single-context: one `GLOSSARY.md` and `docs/adr/` at the repo root. See `docs/agents/domain.md`.
+
+## Coding
+
+Run every coding task with the `ponytail` skill at level `full` (`/ponytail full`).
