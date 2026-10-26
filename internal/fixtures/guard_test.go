@@ -9,13 +9,20 @@ import (
 )
 
 // TestFixturesAreSanitized scans every committed fixture, third-party ones
-// included. Only provenance files (LICENSE, NOTICE, SOURCE) are skipped: they
-// name upstream projects, not environments.
+// included. Only provenance files (LICENSE, NOTICE, SOURCE) and the
+// gitignored testdata/raw are skipped: they name upstream projects, not
+// environments, or are never committed.
 func TestFixturesAreSanitized(t *testing.T) {
 	root := filepath.Join("..", "..", "testdata")
 	err := filepath.WalkDir(root, func(p string, d fs.DirEntry, err error) error {
-		if err != nil || d.IsDir() {
+		if err != nil {
 			return err
+		}
+		if d.IsDir() {
+			if p == filepath.Join(root, "raw") { // gitignored captures awaiting cmd/sanitize
+				return filepath.SkipDir
+			}
+			return nil
 		}
 		switch strings.SplitN(d.Name(), ".", 2)[0] {
 		case "LICENSE", "NOTICE", "SOURCE":

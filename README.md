@@ -87,6 +87,15 @@ This repository is public. Fixtures, docs and issues must never contain real hos
 
 `TestFixturesAreSanitized` scans every file under `testdata/` and fails on anything else, and it runs in `nix flake check`.
 
+## Fixtures
+
+1. Put the capture in `testdata/raw/`, which is gitignored and skipped by the guard.
+2. Sanitize it: `go run ./cmd/sanitize < testdata/raw/x.txt > testdata/<dir>/x.txt`. It replaces hostnames with `dev1`, `dev2`, …, addresses and domains with documentation values, and serials, usernames, model and firmware strings with placeholders. It drops login lines, banners, secret lines and timestamps. It prints nothing if the result still fails the guard.
+3. Review the diff by hand: the guard catches formats, not meaning.
+4. Commit only what `go test ./internal/fixtures` passes.
+
+Third-party fixtures go under `testdata/third_party/<source>/` with the upstream `LICENSE`, a `SOURCE` file (URL, commit SHA, upstream path of each file) and, for Apache-2.0, a `NOTICE` that lists each file changed. They are sanitized like any other fixture. `cmd/sanitize` is a dev tool, not part of the shipped package.
+
 ## Licence
 
 MIT.

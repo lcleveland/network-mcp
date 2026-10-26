@@ -9,12 +9,13 @@ import (
 	"strings"
 )
 
+// The patterns the guard scans for; cmd/sanitize rewrites the same matches.
 var (
-	ipv4   = regexp.MustCompile(`\b\d{1,3}(\.\d{1,3}){3}\b`)
-	ipv6   = regexp.MustCompile(`(?i)[0-9a-f]{0,4}(:[0-9a-f]{0,4}){2,7}`)
-	mac    = regexp.MustCompile(`(?i)\b[0-9a-f]{2}([:-][0-9a-f]{2}){5}\b|\b[0-9a-f]{4}\.[0-9a-f]{4}\.[0-9a-f]{4}\b`)
-	fqdn   = regexp.MustCompile(`(?i)\b(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.)+(com|net|org|edu|gov|mil|int|io|co|us|uk|de|info|biz|local|lan|corp|internal|home|arpa)\b`)
-	secret = regexp.MustCompile(`(?i)\b(password|secret|community|key-string|pre-shared-key|authentication-key|md5)\s+(\S+)`)
+	IPv4   = regexp.MustCompile(`\b\d{1,3}(\.\d{1,3}){3}\b`)
+	IPv6   = regexp.MustCompile(`(?i)[0-9a-f]{0,4}(:[0-9a-f]{0,4}){2,7}`)
+	MAC    = regexp.MustCompile(`(?i)\b[0-9a-f]{2}([:-][0-9a-f]{2}){5}\b|\b[0-9a-f]{4}\.[0-9a-f]{4}\.[0-9a-f]{4}\b`)
+	FQDN   = regexp.MustCompile(`(?i)\b(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.)+(com|net|org|edu|gov|mil|int|io|co|us|uk|de|info|biz|local|lan|corp|internal|home|arpa)\b`)
+	Secret = regexp.MustCompile(`(?i)\b(password|secret|community|key-string|pre-shared-key|authentication-key|md5)\s+(\S+)`)
 
 	docV4 = []netip.Prefix{
 		netip.MustParsePrefix("192.0.2.0/24"), netip.MustParsePrefix("198.51.100.0/24"),
@@ -26,30 +27,30 @@ var (
 // Violations lists every value in text that would expose a real environment.
 func Violations(text string) []string {
 	var out []string
-	for _, m := range ipv4.FindAllString(text, -1) {
+	for _, m := range IPv4.FindAllString(text, -1) {
 		if a, err := netip.ParseAddr(m); err == nil && !okV4(a) {
 			out = append(out, "IPv4 "+m)
 		}
 	}
-	for _, m := range ipv6.FindAllString(text, -1) {
+	for _, m := range IPv6.FindAllString(text, -1) {
 		if a, err := netip.ParseAddr(m); err == nil && a.Is6() && !docV6.Contains(a) && !a.IsLoopback() && !a.IsUnspecified() {
 			out = append(out, "IPv6 "+m)
 		}
 	}
-	for _, m := range mac.FindAllString(text, -1) {
+	for _, m := range MAC.FindAllString(text, -1) {
 		h := strings.ToLower(strings.NewReplacer(":", "", "-", "", ".", "").Replace(m))
 		if !strings.HasPrefix(h, "00005e0053") && h != "ffffffffffff" && h != "000000000000" {
 			out = append(out, "MAC "+m)
 		}
 	}
-	for _, m := range fqdn.FindAllString(text, -1) {
+	for _, m := range FQDN.FindAllString(text, -1) {
 		l := strings.ToLower(m)
 		if l != "example.com" && l != "example.net" && l != "example.org" &&
 			!strings.HasSuffix(l, ".example.com") && !strings.HasSuffix(l, ".example.net") && !strings.HasSuffix(l, ".example.org") {
 			out = append(out, "FQDN "+m)
 		}
 	}
-	for _, m := range secret.FindAllStringSubmatch(text, -1) {
+	for _, m := range Secret.FindAllStringSubmatch(text, -1) {
 		if v := m[2]; !(strings.HasPrefix(v, "<") && strings.HasSuffix(v, ">")) {
 			out = append(out, fmt.Sprintf("secret line %q", m[0]))
 		}

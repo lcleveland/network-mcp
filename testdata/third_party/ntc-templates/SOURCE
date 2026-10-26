@@ -1,0 +1,6 @@
+https://github.com/networktocode/ntc-templates
+commit d4f30da6077dfb3e41cb6ff7ece5f5b768f59457
+
+cisco_ios_show_version.raw  tests/cisco_ios/show_version/cisco_ios_show_version.raw (sanitized, see NOTICE)
+LICENSE                     LICENSE (verbatim)
+LICENSE.Apache-2.0          https://www.apache.org/licenses/LICENSE-2.0.txt (verbatim)
