@@ -1,6 +1,6 @@
 # network-mcp
 
-An MCP server, written in Go, that reads network devices over SSH. It is general-purpose: any SSH device works through the generic driver. First-class IOS-XE and NX-OS drivers, SNMP, config export and gated writes come in later releases. It is packaged as a Nix flake.
+An MCP server, written in Go, that reads network devices over SSH. It is general-purpose: any SSH device works through the generic driver. First-class IOS-XE and NX-OS drivers, SNMP, config export and gated writes come in later releases. It serves stdio or streamable HTTP and is packaged as a Nix flake with a NixOS module.
 
 The server is read-only. Before anything reaches a device, it checks four things:
 - the device is in the inventory and opted in;
@@ -34,7 +34,11 @@ Results are JSON built by the server. Device text appears only in the fields lis
 | `--known-hosts` | `NETWORK_MCP_KNOWN_HOSTS` | required if any device uses SSH |
 | `--tool-groups` | | all (`cli`; `core` is always on) |
 | `--request-timeout`, `--log-level` | `NETWORK_MCP_LOG_LEVEL` | `30s`, `info` |
-| `--stdio` | | the only transport so far |
+| `--stdio` / `--http` | | stdio |
+| `--addr`, `--path` | | `127.0.0.1:8232`, `/mcp` |
+| `--http-auth-token-file` | `NETWORK_MCP_HTTP_AUTH_TOKEN_FILE` | the credential `http-auth-token` if present; a non-loopback listener requires a token |
+
+**HTTP.** Clients send `Authorization: Bearer <token>`, compared in constant time. The server refuses to start on a non-loopback `--addr` without a token, and never logs it. `/healthz` stays open.
 
 The config file holds structure only, never secrets:
 
@@ -59,7 +63,48 @@ The device file is a list. Names are unique and case-insensitive, and every devi
 
 **Audit.** One JSON line per event goes to stderr, which lands in journald under systemd.
 
-## Claude Code (stdio)
+## Nix
+
+```nix
+{
+  inputs.network-mcp.url = "github:lcleveland/network-mcp";
+
+  outputs = { nixpkgs, network-mcp, ... }: {
+    nixosConfigurations.host = nixpkgs.lib.nixosSystem {
+      modules = [
+        network-mcp.nixosModules.default
+        {
+          services.network-mcp = {
+            enable = true;
+            settings = {
+              management_prefixes = [ "192.0.2.0/24" ];
+              sources = [ { name = "file"; type = "file"; path = "/etc/network-mcp/devices.yaml"; } ];
+              credentials.default.read_ref = "ssh-read";
+            };
+            # ref name -> runtime path, e.g. from sops-nix or agenix
+            credentials.ssh-read = "/run/secrets/network-mcp-ssh-read"; # config.sops.secrets.<name>.path
+            # credentials.ssh-read = config.age.secrets.network-mcp-ssh-read.path;
+            knownHostsFile = "/etc/network-mcp/known_hosts";
+            bearerTokenFile = "/run/secrets/network-mcp-bearer";
+          };
+        }
+      ];
+    };
+  };
+}
+```
+
+The module:
+- renders `settings` to the `--config` file (or takes `configFile`); it holds structure and ref names only;
+- passes each credential and the bearer token through systemd `LoadCredential`, so no secret reaches the Nix store, argv or the environment, and refuses paths inside the store;
+- serves streamable HTTP on `127.0.0.1:8232` as a hardened DynamicUser, and refuses a non-loopback `listenAddress` without `bearerTokenFile`;
+- refuses empty `settings.management_prefixes`.
+
+`overlays.default` adds `pkgs.network-mcp`. To install only the CLI for stdio use on a workstation, set `services.network-mcp.installCli = true;` and leave `enable` off.
+
+## Clients
+
+Claude Code over stdio:
 
 ```json
 {
@@ -73,11 +118,18 @@ The device file is a list. Names are unique and case-insensitive, and every devi
 }
 ```
 
+Over HTTP, to the NixOS service:
+
+```sh
+claude mcp add --transport http network http://127.0.0.1:8232/mcp \
+  --header "Authorization: Bearer $(cat ~/.config/network-mcp/bearer)"
+```
+
 ## Development
 
-`nix develop` gives you Go, gopls, govulncheck and nixfmt. `nix flake check` builds the package and runs every test, the fixture guard included. `nix fmt` formats the Nix files.
+`nix develop` gives you Go, gopls, govulncheck and nixfmt. `nix flake check` builds the package and runs every test (the fixture guard included), the module evaluation checks and the VM test. `nix fmt` formats the Nix files.
 
-The tests are hermetic: an in-process SSH server (`internal/sshfake`) replays fixture output on loopback. There is no vendor image and no lab.
+The tests are hermetic: an in-process SSH server (`internal/sshfake`) replays fixture output on loopback. There is no vendor image and no lab. The VM test (`nix build .#checks.x86_64-linux.vm-network -L`, under a minute with KVM) runs the module against a real OpenSSH server whose login shell is `cmd/fakecli`, a test-only build of the same fake that is never shipped.
 
 ## Public repo rule
 

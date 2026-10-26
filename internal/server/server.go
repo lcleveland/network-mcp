@@ -1,4 +1,5 @@
-// Package server builds the MCP server and serves it over stdio.
+// Package server builds the MCP server and serves it over stdio or
+// streamable HTTP.
 package server
 
 import (

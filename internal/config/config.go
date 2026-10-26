@@ -12,8 +12,10 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net"
 	"net/netip"
 	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"time"
@@ -34,6 +36,11 @@ type Config struct {
 	RequestTimeout time.Duration
 	LogLevel       slog.Level
 	ShowVersion    bool
+
+	HTTP          bool
+	Addr          string
+	Path          string
+	HTTPAuthToken string // never logged
 
 	File File
 }
@@ -66,6 +73,9 @@ func (c *Config) LogValue() slog.Value {
 		slog.Any("groups", c.Groups),
 		slog.Any("management_prefixes", c.File.ManagementPrefixes),
 		slog.Int("sources", len(c.File.Sources)),
+		slog.Bool("http", c.HTTP),
+		slog.String("addr", c.Addr),
+		slog.Bool("http_auth_set", c.HTTPAuthToken != ""),
 	)
 }
 
@@ -73,9 +83,9 @@ func (c *Config) LogValue() slog.Value {
 // config file.
 func Parse(args []string, getenv func(string) string) (*Config, error) {
 	var (
-		c                Config
-		groups, logLevel string
-		stdio            bool
+		c                       Config
+		groups, logLevel, hauth string
+		stdio                   bool
 	)
 	fs := flag.NewFlagSet("network-mcp", flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
@@ -86,12 +96,19 @@ func Parse(args []string, getenv func(string) string) (*Config, error) {
 	fs.DurationVar(&c.RequestTimeout, "request-timeout", 30*time.Second, "per-request timeout to a device")
 	fs.StringVar(&logLevel, "log-level", or(getenv("NETWORK_MCP_LOG_LEVEL"), "info"), "debug|info|warn|error (env NETWORK_MCP_LOG_LEVEL)")
 	fs.BoolVar(&stdio, "stdio", false, "serve over stdio (default)")
+	fs.BoolVar(&c.HTTP, "http", false, "serve over streamable HTTP")
+	fs.StringVar(&c.Addr, "addr", "127.0.0.1:8232", "HTTP listen address")
+	fs.StringVar(&c.Path, "path", "/mcp", "HTTP MCP endpoint path")
+	fs.StringVar(&hauth, "http-auth-token-file", getenv("NETWORK_MCP_HTTP_AUTH_TOKEN_FILE"), "file holding the bearer token HTTP clients must send (env NETWORK_MCP_HTTP_AUTH_TOKEN_FILE)")
 	fs.BoolVar(&c.ShowVersion, "version", false, "print version and exit")
 	if err := fs.Parse(args); err != nil {
 		return nil, err
 	}
 	if c.ShowVersion {
 		return &c, nil
+	}
+	if stdio && c.HTTP {
+		return nil, errors.New("--stdio and --http are mutually exclusive")
 	}
 	if err := c.LogLevel.UnmarshalText([]byte(logLevel)); err != nil {
 		return nil, fmt.Errorf("--log-level: %w", err)
@@ -114,6 +131,11 @@ func Parse(args []string, getenv func(string) string) (*Config, error) {
 	if c.CredentialsDir == "" {
 		return nil, errors.New("--credentials-dir (or CREDENTIALS_DIRECTORY) is required")
 	}
+	if c.HTTP {
+		if err := c.readHTTPAuth(hauth); err != nil {
+			return nil, err
+		}
+	}
 	b, err := os.ReadFile(c.ConfigPath)
 	if err != nil {
 		return nil, err
@@ -122,6 +144,49 @@ func Parse(args []string, getenv func(string) string) (*Config, error) {
 		return nil, fmt.Errorf("%s: %w", c.ConfigPath, err)
 	}
 	return &c, nil
+}
+
+// readHTTPAuth loads the bearer token from file, else from the credential
+// http-auth-token, and refuses an unauthenticated non-loopback listener.
+func (c *Config) readHTTPAuth(file string) error {
+	if !strings.HasPrefix(c.Path, "/") {
+		return errors.New("--path must start with /")
+	}
+	var err error
+	if file != "" {
+		c.HTTPAuthToken, err = readSecret(file)
+	} else if s, e := readSecret(filepath.Join(c.CredentialsDir, "http-auth-token")); e == nil {
+		c.HTTPAuthToken = s
+	}
+	if err != nil {
+		return err
+	}
+	if c.HTTPAuthToken == "" && !loopback(c.Addr) {
+		return fmt.Errorf("refusing to listen on non-loopback %s without --http-auth-token-file", c.Addr)
+	}
+	return nil
+}
+
+// readSecret errors never include the file contents.
+func readSecret(path string) (string, error) {
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return "", fmt.Errorf("reading secret: %w", err)
+	}
+	s := strings.TrimSpace(string(b))
+	if s == "" {
+		return "", fmt.Errorf("secret file %s is empty", path)
+	}
+	return s, nil
+}
+
+func loopback(addr string) bool {
+	host, _, err := net.SplitHostPort(addr)
+	if err != nil {
+		return false
+	}
+	ip := net.ParseIP(host)
+	return host == "localhost" || ip != nil && ip.IsLoopback()
 }
 
 // ParseFile decodes and validates the config file. Unknown keys are errors.

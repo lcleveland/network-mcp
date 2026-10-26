@@ -37,6 +37,9 @@ func run(args []string, getenv func(string) string) error {
 	defer stop()
 	s, n := server.New(*d)
 	d.Log.Info("registered tools", "count", n)
+	if d.Config.HTTP {
+		return server.ServeHTTP(ctx, d.Config, s, d.Log)
+	}
 	return server.ServeStdio(ctx, s)
 }
 

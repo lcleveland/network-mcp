@@ -1,6 +1,8 @@
 package config
 
 import (
+	"bytes"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -48,6 +50,44 @@ func TestParse(t *testing.T) {
 		if _, err := Parse(tc.args, func(string) string { return "" }); err == nil || !strings.Contains(err.Error(), tc.want) {
 			t.Errorf("%v: %v, want %q", tc.args, err, tc.want)
 		}
+	}
+}
+
+func TestHTTP(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+	os.WriteFile(path, []byte(good), 0o600)
+	base := []string{"--config", path, "--credentials-dir", dir, "--http"}
+	noenv := func(string) string { return "" }
+
+	for _, tc := range []struct {
+		args []string
+		want string
+	}{
+		{[]string{"--addr", "0.0.0.0:8232"}, "non-loopback"},
+		{[]string{"--addr", "192.0.2.1:8232"}, "non-loopback"},
+		{[]string{"--path", "mcp"}, "--path"},
+		{[]string{"--stdio"}, "mutually exclusive"},
+		{[]string{"--http-auth-token-file", filepath.Join(dir, "missing")}, "reading secret"},
+	} {
+		if _, err := Parse(append(base, tc.args...), noenv); err == nil || !strings.Contains(err.Error(), tc.want) {
+			t.Errorf("%v: %v, want %q", tc.args, err, tc.want)
+		}
+	}
+
+	// loopback needs no token; the credential http-auth-token is picked up
+	if c, err := Parse(base, noenv); err != nil || c.Addr != "127.0.0.1:8232" || c.HTTPAuthToken != "" {
+		t.Fatalf("%v %v", c, err)
+	}
+	os.WriteFile(filepath.Join(dir, "http-auth-token"), []byte(" supersecretvalue\n"), 0o600)
+	c, err := Parse(append(base, "--addr", "0.0.0.0:8232"), noenv)
+	if err != nil || c.HTTPAuthToken != "supersecretvalue" {
+		t.Fatalf("%v %v", c, err)
+	}
+	var buf bytes.Buffer
+	slog.New(slog.NewTextHandler(&buf, nil)).Info("x", "config", c)
+	if strings.Contains(buf.String(), "supersecretvalue") || !strings.Contains(buf.String(), "http_auth_set=true") {
+		t.Fatalf("log: %s", buf.String())
 	}
 }
 
