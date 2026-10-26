@@ -10,6 +10,7 @@ import (
 
 	"github.com/lcleveland/network-mcp/internal/config"
 	"github.com/lcleveland/network-mcp/internal/inventory"
+	"github.com/lcleveland/network-mcp/internal/output"
 	"github.com/lcleveland/network-mcp/internal/sshcli"
 	"github.com/lcleveland/network-mcp/internal/version"
 )
@@ -34,6 +35,7 @@ type StatusOutput struct {
 	Prompt      string             `json:"prompt,omitempty"`
 	DeviceError string             `json:"device_error,omitempty"`
 	Untrusted   []string           `json:"_untrusted,omitempty"`
+	Redactions  int                `json:"_redactions,omitempty"`
 }
 
 func registerStatus(s *mcp.Server, d Deps) {
@@ -61,10 +63,15 @@ func registerStatus(s *mcp.Server, d Deps) {
 			return nil, StatusOutput{}, err
 		}
 		out := StatusOutput{Device: dev.Name, Address: dev.Address}
+		field := func(s string, max int) string {
+			s, n := output.Field(s, max)
+			out.Redactions += n
+			return s
+		}
 		check := func(name string, err error) bool {
 			c := Check{Name: name, OK: err == nil}
 			if err != nil {
-				c.Detail = err.Error()
+				c.Detail = field(err.Error(), output.LongCap)
 			}
 			out.Checks = append(out.Checks, c)
 			return err == nil
@@ -92,7 +99,8 @@ func registerStatus(s *mcp.Server, d Deps) {
 				}
 				check(string(st), nil)
 			}
-			out.DeviceError, out.Untrusted = oe.Err.Error(), []string{"device_error"}
+			out.DeviceError = field(oe.Err.Error(), output.LongCap)
+			out.Untrusted = []string{"device_error"}
 			return nil, out, nil
 		}
 		if err != nil { // the read credential itself is unusable
@@ -103,7 +111,8 @@ func registerStatus(s *mcp.Server, d Deps) {
 		for _, st := range []sshcli.Stage{sshcli.StageHostKey, sshcli.StageAuth, sshcli.StagePrompt} {
 			check(string(st), nil)
 		}
-		out.Prompt, out.Untrusted = ses.Prompt(), []string{"prompt"}
+		out.Prompt = field(ses.Prompt(), output.FieldCap)
+		out.Untrusted = []string{"prompt"}
 		return nil, out, nil
 	})
 }
