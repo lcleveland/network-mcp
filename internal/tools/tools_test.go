@@ -122,7 +122,7 @@ func (e *env) commands() []string {
 }
 
 func TestShow(t *testing.T) {
-	fixture := string(must(os.ReadFile("../../testdata/generic/show_version.txt")))
+	fixture := string(must(os.ReadFile("../../testdata/third_party/ntc-templates/cisco_ios_show_version.raw")))
 	e := start(t, map[string]string{"show version": fixture}, sshfake.Options{})
 	out, errText := e.call(t, "network_show", map[string]any{"device": "DEV1", "command": "show  version"})
 	if errText != "" || out["output"] != strings.TrimRight(fixture, "\n") || out["command"] != "show version" ||
