@@ -5,6 +5,7 @@
 package sshcli
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -23,6 +24,9 @@ import (
 
 // MaxRead caps one raw read from a device.
 const MaxRead = 16 << 20
+
+// ErrDeviceLimit comes with the first MaxRead bytes of an output that ran longer.
+var ErrDeviceLimit = fmt.Errorf("output exceeds %d bytes", MaxRead)
 
 // scrapligo's default prompt, widened to 63-character hostnames.
 var promptPattern = regexp.MustCompile(`(?im)^[a-z\d.\-@()/:_]{1,63}[#>$]\s*$`)
@@ -140,9 +144,9 @@ func (s *Session) Run(ctx context.Context, cmd string) (string, error) {
 		}
 		buf = append(buf, b...)
 		if len(buf) > MaxRead {
-			return "", fmt.Errorf("output exceeds %d bytes", MaxRead)
+			return clean(string(buf[:MaxRead]), cmd), ErrDeviceLimit
 		}
-		last := buf[strings.LastIndexByte(string(buf), '\n')+1:]
+		last := buf[bytes.LastIndexByte(buf, '\n')+1:]
 		if loc := pagerPattern.FindIndex(last); loc != nil {
 			buf = buf[:len(buf)-len(last)+loc[0]]
 			if err := s.d.Channel.Write([]byte(" "), false); err != nil {

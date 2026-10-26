@@ -1,0 +1,13 @@
+network-mcp
+Copyright (c) 2026 Lyle Cleveland. Licensed under the MIT License (see LICENSE).
+
+The secret-redaction patterns in internal/output are adapted from:
+
+- Oxidized (https://github.com/ytti/oxidized), lib/oxidized/model/ios.rb and
+  nxos.rb, cmd :secret. Licensed under the Apache License, Version 2.0.
+- NAPALM (https://github.com/napalm-automation/napalm),
+  napalm/base/constants.py, CISCO_SANITIZE_FILTERS. Licensed under the
+  Apache License, Version 2.0.
+
+A copy of the Apache License, Version 2.0, is at
+https://www.apache.org/licenses/LICENSE-2.0
