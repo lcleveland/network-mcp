@@ -18,7 +18,11 @@ let
   fakeShell =
     pkgs.writeShellScriptBin "fakecli-shell" ''
       ${pkgs.coreutils}/bin/stty raw -echo
-      exec ${pkgs.lib.getExe fakecli} --hostname dev1 --fixtures ${../testdata/generic} --log /home/fake/received.log
+      exec ${pkgs.lib.getExe fakecli} --hostname dev1 --fixtures ${
+        pkgs.linkFarm "fixtures" {
+          "show_version.txt" = ../testdata/third_party/ntc-templates/cisco_ios_show_version.raw;
+        }
+      } --log /home/fake/received.log
     ''
     // {
       shellPath = "/bin/fakecli-shell";
@@ -169,7 +173,7 @@ pkgs.testers.runNixOSTest {
 
     with subtest("network_show returns the fixture"):
         out = tool("network_show", {"device": "dev1", "command": "show version"})
-        assert "Cisco IOS Software, Version 1.0" in out["output"], out
+        assert "Cisco IOS Software, Catalyst" in out["output"], out
         assert out["_untrusted"] == ["output"], out
 
     with subtest("refused commands never reach the device"):
