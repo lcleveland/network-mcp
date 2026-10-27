@@ -44,7 +44,7 @@ func registerStatus(s *mcp.Server, d Deps) {
 		Name:  "network_status",
 		Title: "Server and device connectivity check",
 		Description: "Without device: the server version, enabled tool groups, the health of each inventory source and, " +
-			"with network_change enabled, the pending plan count.\n\n" +
+			"with network_change enabled, the pending plan and change counts.\n\n" +
 			"With device: each connect check in order (management-prefix gate, TCP, pinned host key, read-credential auth, " +
 			"prompt detected; only the gate for an SNMP-only device, one with no read_ref), stopping at the first failure; then, if the device has SNMP, an SNMP sysUpTime.0 read. It runs no CLI command. " +
 			"Call this first when network_show fails.\n\n" + UntrustedNote,

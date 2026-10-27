@@ -18,6 +18,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/lcleveland/network-mcp/internal/audit"
+	"github.com/lcleveland/network-mcp/internal/change"
 	"github.com/lcleveland/network-mcp/internal/config"
 	"github.com/lcleveland/network-mcp/internal/gate"
 	"github.com/lcleveland/network-mcp/internal/inventory"
@@ -57,9 +58,9 @@ type setup struct {
 	dests     map[string]config.Destination
 	auditW    io.Writer // default: e.audit
 	// change tests
-	allowConfig bool
-	rules       []config.Rule     // appended to the default and adhoc rules
-	snmp        *snmpfake.Options // dev1 gets a v2c rule against this fake agent
+	allowConfig, allowSave bool
+	rules                  []config.Rule     // appended to the default and adhoc rules
+	snmp                   *snmpfake.Options // dev1 gets a v2c rule against this fake agent
 }
 
 func startWith(t *testing.T, su setup) *env {
@@ -88,7 +89,7 @@ func startWith(t *testing.T, su setup) *env {
 			Platforms:    su.platforms,
 			Destinations: su.dests,
 		},
-		AllowAdhoc: su.adhoc, AllowConfig: su.allowConfig, MaxPendingChanges: 1,
+		AllowAdhoc: su.adhoc, AllowConfig: su.allowConfig, AllowSave: su.allowSave, MaxPendingChanges: 1,
 	}
 	if su.second != "" {
 		p := filepath.Join(dir, "second.yaml")
@@ -113,7 +114,7 @@ func startWith(t *testing.T, su setup) *env {
 	dns := map[string]string{"dev1.example.net": fake.Host, "far.example.net": "203.0.113.9"}
 	s := mcp.NewServer(&mcp.Implementation{Name: "test"}, nil)
 	e.deps = Deps{
-		Config: cfg, Inv: inv, Audit: audit.New(cmp.Or[io.Writer](su.auditW, e.audit)),
+		Config: cfg, Inv: inv, Audit: audit.New(cmp.Or[io.Writer](su.auditW, e.audit)), Changes: change.NewStore(),
 		Log: slog.New(slog.NewTextHandler(e.log, &slog.HandlerOptions{Level: slog.LevelDebug})),
 		Lookup: func(_ context.Context, h string) ([]netip.Addr, error) {
 			return []netip.Addr{netip.MustParseAddr(dns[h])}, nil

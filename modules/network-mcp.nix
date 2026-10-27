@@ -60,6 +60,7 @@ let
   ]
   ++ optional cfg.allowAdhoc "--allow-adhoc"
   ++ optional cfg.allowConfig "--allow-config"
+  ++ optional cfg.allowSave "--allow-save"
   ++ lib.concatMap (d: [
     "--mib-dir"
     d
@@ -145,9 +146,19 @@ in
       default = false;
       description = ''
         Register `network_change`, which plans config changes on IOS-XE and
-        NX-OS devices with each device's `write_ref` behind a management-plane
+        NX-OS devices and applies them on IOS-XE (under a device-side revert
+        timer) with each device's `write_ref` behind a management-plane
         denylist. Every `write_ref` named in `settings.rules` must be in
         `credentials`.
+      '';
+    };
+    allowSave = mkOption {
+      type = types.bool;
+      default = false;
+      description = ''
+        Add the `network_change` action `save` (`copy running-config
+        startup-config`), allowed only at the running config of the last
+        change this server confirmed on the device. Needs `allowConfig`.
       '';
     };
     maxPendingChanges = mkOption {
@@ -268,6 +279,10 @@ in
           message = "services.network-mcp.allowConfig: every write_ref in settings.rules needs an entry in credentials.";
         }
         {
+          assertion = !cfg.allowSave || cfg.allowConfig;
+          message = "services.network-mcp.allowSave needs allowConfig.";
+        }
+        {
           assertion = !staticUser || cfg.group != null;
           message = "services.network-mcp.group must be set when user is set.";
         }
@@ -284,7 +299,7 @@ in
       warnings =
         optional (cfg.openFirewall && isLoopback cfg.listenAddress)
           "services.network-mcp.openFirewall has no effect while listenAddress is loopback (${cfg.listenAddress})."
-        ++ optional cfg.allowConfig "services.network-mcp.allowConfig is on: MCP clients can plan configuration changes on devices with a write_ref.";
+        ++ optional cfg.allowConfig "services.network-mcp.allowConfig is on: MCP clients can change the configuration of devices with a write_ref.";
 
       users = mkIf staticUser {
         users.${cfg.user} = {
