@@ -9,6 +9,8 @@ import (
 	"bytes"
 	"context"
 	"crypto/ed25519"
+	"crypto/x509"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"net"
@@ -116,6 +118,9 @@ func Open(ctx context.Context, t Target) (*Session, error) {
 		return nil, &OpenError{StageConnect, err}
 	}
 	if err := d.Open(); err != nil {
+		if ke := (*knownhosts.KeyError)(nil); errors.As(err, &ke) {
+			err = hostKeyError{ke}
+		}
 		return nil, &OpenError{classify(err), err}
 	}
 	ctx, cancel := context.WithTimeout(ctx, t.Timeout)
@@ -145,6 +150,74 @@ func newDriver(host, plat string, opts []util.Option) (*generic.Driver, error) {
 		return nil, err
 	}
 	return nd.Driver, nil
+}
+
+// hostKeyError words a known_hosts refusal without "key <word>", which the
+// output redactor would blank ("key is unknown" read as "key <redacted> unknown").
+type hostKeyError struct{ ke *knownhosts.KeyError }
+
+func (e hostKeyError) Error() string {
+	if len(e.ke.Want) == 0 {
+		return "host key: not pinned in known_hosts"
+	}
+	return "host key: differs from the one pinned in known_hosts"
+}
+
+func (e hostKeyError) Unwrap() error { return e.ke }
+
+// Offered returns the host key addr:port presents, stopping the handshake
+// as soon as it arrives, so nothing is authenticated or sent. The key is
+// trusted for nothing: it is shown for an operator to check on the device.
+// The client defaults match Open's, so this is the key Open would check.
+func Offered(ctx context.Context, addr netip.Addr, port int) (ssh.PublicKey, error) {
+	ap := netip.AddrPortFrom(addr.Unmap(), uint16(port)).String()
+	conn, err := (&net.Dialer{}).DialContext(ctx, "tcp", ap)
+	if err != nil {
+		return nil, err
+	}
+	defer conn.Close()
+	if dl, ok := ctx.Deadline(); ok {
+		conn.SetDeadline(dl)
+	}
+	var key ssh.PublicKey
+	_, _, _, err = ssh.NewClientConn(conn, ap, &ssh.ClientConfig{
+		User: "network-mcp",
+		HostKeyCallback: func(_ string, _ net.Addr, k ssh.PublicKey) error {
+			key = k
+			return errors.New("stop after the host key")
+		},
+	})
+	if key == nil {
+		return nil, err
+	}
+	return key, nil
+}
+
+// KeyData formats an RSA key as IOS prints it under "Key Data:" in show
+// crypto key mypubkey rsa: the DER public key in upper-case hex, eight
+// 8-digit groups a line. Other key types return "".
+func KeyData(k ssh.PublicKey) string {
+	ck, ok := k.(ssh.CryptoPublicKey)
+	if k.Type() != ssh.KeyAlgoRSA || !ok {
+		return ""
+	}
+	der, err := x509.MarshalPKIXPublicKey(ck.CryptoPublicKey())
+	if err != nil {
+		return ""
+	}
+	h := strings.ToUpper(hex.EncodeToString(der))
+	var b strings.Builder
+	for i := 0; i < len(h); i += 8 {
+		switch {
+		case i == 0:
+		case i%64 == 0:
+			b.WriteByte('\n')
+		default:
+			b.WriteByte(' ')
+		}
+		b.WriteString(h[i:min(i+8, len(h))])
+	}
+	return b.String()
 }
 
 func classify(err error) Stage {

@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+	"golang.org/x/crypto/ssh"
 
 	"github.com/lcleveland/network-mcp/internal/audit"
 	"github.com/lcleveland/network-mcp/internal/change"
@@ -286,6 +287,11 @@ func TestStatus(t *testing.T) {
 	out, _ = e.call(t, "network_status", map[string]any{"device": "dev1"})
 	if checks(out) != "management_prefix:true tcp:true host_key:false" {
 		t.Fatalf("wrong key: %v", out)
+	}
+	// what the device presented, for an operator to check; it is never pinned
+	if ok, _ := out["offered_host_key"].(map[string]any); ok["sha256"] != ssh.FingerprintSHA256(e.fake.HostKey) ||
+		!strings.Contains(fmt.Sprint(out["_untrusted"]), "offered_host_key") || !strings.Contains(fmt.Sprint(out["device_error"]), "differs from the one pinned") {
+		t.Fatalf("offered key: %v", out)
 	}
 }
 

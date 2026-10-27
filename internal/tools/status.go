@@ -7,6 +7,7 @@ import (
 	"strconv"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+	"golang.org/x/crypto/ssh"
 
 	"github.com/lcleveland/network-mcp/internal/change/nxos"
 	"github.com/lcleveland/network-mcp/internal/config"
@@ -37,9 +38,17 @@ type StatusOutput struct {
 	Checks      []Check            `json:"checks,omitempty"`
 	Prompt      string             `json:"prompt,omitempty"`
 	Checkpoints []string           `json:"stale_checkpoints,omitempty"` // NX-OS network-mcp-* checkpoints
+	OfferedKey  *OfferedKey        `json:"offered_host_key,omitempty"`  // when host_key fails
 	DeviceError string             `json:"device_error,omitempty"`
 	Untrusted   []string           `json:"_untrusted,omitempty"`
 	Redactions  int                `json:"_redactions,omitempty"`
+}
+
+// OfferedKey is the host key a device presented, for an operator to check
+// on the device before pinning it; the server never pins it.
+type OfferedKey struct {
+	Type   string `json:"type"`
+	SHA256 string `json:"sha256"`
 }
 
 func registerStatus(s *mcp.Server, d Deps) {
@@ -54,6 +63,8 @@ func registerStatus(s *mcp.Server, d Deps) {
 			"after the prompt, it runs show checkpoint summary with the read credential (whether or not writes are enabled) " +
 			"and lists any network-mcp-* checkpoint, a change left applied that nobody confirmed or rolled back, in " +
 			"stale_checkpoints. That check is reported on its own and never changes the earlier checks. " +
+			"When the host key check fails, offered_host_key gives the key the device presented (type, SHA256 " +
+			"fingerprint) for an operator to check on the device and pin; the server never pins it. " +
 			"Call this first when network_show fails.\n\n" + UntrustedNote,
 		Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true, OpenWorldHint: new(true)},
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, in StatusInput) (*mcp.CallToolResult, StatusOutput, error) {
@@ -125,6 +136,12 @@ func registerStatus(s *mcp.Server, d Deps) {
 				}
 				out.DeviceError = field(oe.Err.Error(), output.LongCap)
 				out.Untrusted = []string{"device_error"}
+				if oe.Stage == sshcli.StageHostKey {
+					if k, err := sshcli.Offered(ctx, g.addr, g.dev.Port); err == nil {
+						out.OfferedKey = &OfferedKey{Type: k.Type(), SHA256: ssh.FingerprintSHA256(k)}
+						out.Untrusted = append(out.Untrusted, "offered_host_key")
+					}
+				}
 				return
 			}
 			if err != nil { // the read credential itself is unusable
