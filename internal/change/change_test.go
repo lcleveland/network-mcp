@@ -70,3 +70,23 @@ func TestPlanToken(t *testing.T) {
 		t.Fatal("MaxPlans exceeded")
 	}
 }
+
+func TestSlots(t *testing.T) {
+	s := NewStore()
+	if s.Reserve("a", 1) != nil || s.Reserve("b", 1) == nil || s.Reserve("a", 2) == nil {
+		t.Fatal("max 1 across devices, one change per device")
+	}
+	c := &Change{ID: "c1", Plan: Plan{Device: "a", Session: "s1"}, PostHash: "h"}
+	s.Commit(c)
+	s.Release("a") // a committed change keeps its slot
+	if got, err := s.Get("c1", "s1"); got != c || err != nil || len(s.Changes()) != 1 {
+		t.Fatal("committed change")
+	}
+	if _, err := s.Get("c1", "s2"); !errors.Is(err, ErrUnknownChange) {
+		t.Fatal("another session's change")
+	}
+	s.End(c, true)
+	if !c.Done || s.Confirmed("a") != "h" || s.Reserve("b", 1) != nil {
+		t.Fatal("End frees the slot and records the confirmed hash")
+	}
+}

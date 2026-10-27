@@ -48,6 +48,7 @@ type Config struct {
 	MIBDirs       []string
 
 	AllowConfig       bool // registers the change group; off by default
+	AllowSave         bool // adds network_change save; needs AllowConfig
 	MaxPendingChanges int
 
 	File File
@@ -132,6 +133,7 @@ func (c *Config) LogValue() slog.Value {
 		slog.Bool("http_auth_set", c.HTTPAuthToken != ""),
 		slog.Bool("allow_adhoc", c.AllowAdhoc),
 		slog.Bool("allow_config", c.AllowConfig),
+		slog.Bool("allow_save", c.AllowSave),
 		slog.Int("max_pending_changes", c.MaxPendingChanges),
 		slog.Any("mib_dirs", c.MIBDirs),
 	)
@@ -159,8 +161,9 @@ func Parse(args []string, getenv func(string) string) (*Config, error) {
 	fs.StringVar(&c.Path, "path", "/mcp", "HTTP MCP endpoint path")
 	fs.StringVar(&hauth, "http-auth-token-file", getenv("NETWORK_MCP_HTTP_AUTH_TOKEN_FILE"), "file holding the bearer token HTTP clients must send (env NETWORK_MCP_HTTP_AUTH_TOKEN_FILE)")
 	fs.BoolVar(&c.AllowAdhoc, "allow-adhoc", false, "accept an IP literal inside adhoc_prefixes as a device (generic driver, adhoc rule)")
-	fs.BoolVar(&c.AllowConfig, "allow-config", false, "enable network_change, which plans config changes with each device's write_ref")
+	fs.BoolVar(&c.AllowConfig, "allow-config", false, "enable network_change, which plans, applies, confirms and rolls back config changes with each device's write_ref")
 	fs.IntVar(&c.MaxPendingChanges, "max-pending-changes", 1, "applied but unconfirmed changes allowed at once")
+	fs.BoolVar(&c.AllowSave, "allow-save", false, "add network_change save (copy running-config startup-config); needs --allow-config")
 	fs.Func("mib-dir", "directory of extra MIB modules loaded at startup; repeatable; a module that fails to parse refuses startup", func(s string) error {
 		c.MIBDirs = append(c.MIBDirs, s)
 		return nil
@@ -177,6 +180,9 @@ func Parse(args []string, getenv func(string) string) (*Config, error) {
 	}
 	if err := c.LogLevel.UnmarshalText([]byte(logLevel)); err != nil {
 		return nil, fmt.Errorf("--log-level: %w", err)
+	}
+	if c.AllowSave && !c.AllowConfig {
+		return nil, errors.New("--allow-save needs --allow-config")
 	}
 	if c.MaxPendingChanges < 1 {
 		return nil, errors.New("--max-pending-changes must be at least 1")

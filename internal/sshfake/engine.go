@@ -29,6 +29,7 @@ type Engine struct {
 	PagerLines  int               // default 24
 	DropOn      string            // command whose output is cut short with io.ErrUnexpectedEOF
 	Log         func(line string) // called with every line received; may be nil
+	Device      *Device           // stateful IOS-XE config, shared by every session; may be nil
 }
 
 // Serve runs one CLI session. It returns nil on EOF, "exit" or "quit".
@@ -38,40 +39,69 @@ func (e *Engine) Serve(r io.Reader, w io.Writer) error {
 	if p == (Profile{}) {
 		p = IOSXE
 	}
+	var sid int
+	if e.Device != nil {
+		if sid = e.Device.open(); sid == 0 {
+			return nil
+		}
+	}
 	if _, err := io.WriteString(w, e.Banner); err != nil {
 		return err
 	}
-	for {
-		time.Sleep(e.PromptDelay)
-		if _, err := io.WriteString(w, e.Hostname+p.Prompt); err != nil {
-			return err
-		}
+	mode := ""
+	readLine := func() (string, error) {
 		var line []byte
 		for {
 			b, err := br.ReadByte()
-			if err == io.EOF {
-				return nil
-			}
 			if err != nil {
-				return err
+				return "", err
 			}
 			if b == '\r' || b == '\n' {
 				break
 			}
 			line = append(line, b)
 		}
-		cmd := string(line)
-		if _, err := io.WriteString(w, cmd+"\n"); err != nil {
+		if e.Log != nil {
+			e.Log(string(line))
+		}
+		_, err := io.WriteString(w, string(line)+"\n")
+		return string(line), err
+	}
+	ask := func(q string) error {
+		if _, err := io.WriteString(w, q); err != nil {
 			return err
 		}
-		if e.Log != nil {
-			e.Log(cmd)
+		_, err := readLine()
+		return err
+	}
+	for {
+		time.Sleep(e.PromptDelay)
+		prompt := e.Hostname + p.Prompt
+		if mode != "" {
+			prompt = e.Hostname + "(" + mode + ")" + p.Prompt
+		}
+		if _, err := io.WriteString(w, prompt); err != nil {
+			return err
+		}
+		cmd, err := readLine()
+		if err == io.EOF {
+			return nil
+		}
+		if err != nil {
+			return err
 		}
 		cmd = strings.TrimSpace(cmd)
 		if cmd == "exit" || cmd == "quit" {
 			return nil
 		}
-		out, ok := e.Commands[cmd]
+		var out string
+		ok := false
+		if e.Device != nil {
+			out, ok = e.Device.handle(sid, &mode, cmd, ask)
+		}
+		if !ok {
+			out, ok = e.Commands[cmd]
+		}
 		if !ok && cmd != "" {
 			out = p.Invalid
 		}

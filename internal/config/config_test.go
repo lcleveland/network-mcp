@@ -225,6 +225,12 @@ func TestAllowConfig(t *testing.T) {
 	if err != nil || !c.Enabled("change") || c.MaxPendingChanges != 3 {
 		t.Fatalf("%+v %v", c, err)
 	}
+	if _, err := Parse(append(base, "--allow-save"), noenv); err == nil || !strings.Contains(err.Error(), "--allow-config") {
+		t.Fatalf("--allow-save alone: %v", err)
+	}
+	if c, err = Parse(append(base, "--allow-config", "--allow-save"), noenv); err != nil || !c.AllowSave {
+		t.Fatalf("%+v %v", c, err)
+	}
 	if _, err := Parse(append(base, "--max-pending-changes", "0"), noenv); err == nil {
 		t.Fatal("--max-pending-changes 0 accepted")
 	}

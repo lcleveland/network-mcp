@@ -30,6 +30,10 @@ type Event struct {
 	PlanID     string   `json:"plan_id,omitempty"`
 	Commands   []string `json:"commands,omitempty"` // redacted
 	PreHash    string   `json:"pre_hash,omitempty"`
+	ChangeID   string   `json:"change_id,omitempty"`
+	PostHash   string   `json:"post_hash,omitempty"`
+	Revert     int      `json:"revert_minutes,omitempty"`
+	Deadline   string   `json:"deadline,omitempty"` // RFC 3339
 }
 
 type Log struct {

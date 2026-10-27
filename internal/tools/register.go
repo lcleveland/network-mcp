@@ -89,6 +89,10 @@ func (d Deps) open(ctx context.Context, g *gated) (*sshcli.Session, error) {
 	if err != nil {
 		return nil, err
 	}
+	return d.openAs(ctx, g, c)
+}
+
+func (d Deps) openAs(ctx context.Context, g *gated, c creds.Cred) (*sshcli.Session, error) {
 	return sshcli.Open(ctx, sshcli.Target{
 		Addr: g.addr, Port: g.dev.Port, KnownHosts: d.Config.KnownHosts,
 		Cred: c, Timeout: d.Config.RequestTimeout, Driver: g.plat.Driver,

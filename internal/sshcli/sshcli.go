@@ -191,14 +191,20 @@ func (s *Session) Close() { s.d.Close() }
 // with a space. A platform's failure string near the top of the output
 // returns the output as the error.
 func (s *Session) Run(ctx context.Context, cmd string) (string, error) {
+	return s.Ask(ctx, cmd, nil)
+}
+
+// Ask is Run that answers the first question matching q, such as copy's
+// "Destination filename [startup-config]?", with Enter (its default).
+func (s *Session) Ask(ctx context.Context, cmd string, q *regexp.Regexp) (string, error) {
 	for len(s.setup) > 0 {
 		// the reply is ignored: a refused setting only leaves paging on
-		if _, err := s.run(ctx, s.setup[0]); err != nil {
+		if _, err := s.run(ctx, s.setup[0], nil); err != nil {
 			return "", err
 		}
 		s.setup = s.setup[1:]
 	}
-	out, err := s.run(ctx, cmd)
+	out, err := s.run(ctx, cmd, q)
 	if err != nil {
 		return out, err
 	}
@@ -213,7 +219,7 @@ func (s *Session) Run(ctx context.Context, cmd string) (string, error) {
 	return out, nil
 }
 
-func (s *Session) run(ctx context.Context, cmd string) (string, error) {
+func (s *Session) run(ctx context.Context, cmd string, q *regexp.Regexp) (string, error) {
 	if err := s.d.Channel.WriteAndReturn([]byte(cmd), false); err != nil {
 		return "", err
 	}
@@ -242,10 +248,27 @@ func (s *Session) run(ctx context.Context, cmd string) (string, error) {
 			}
 			continue
 		}
-		if strings.TrimSpace(string(last)) == s.prompt {
+		if q != nil && q.Match(last) {
+			q = nil
+			if err := s.d.Channel.WriteReturn(); err != nil {
+				return "", err
+			}
+			continue
+		}
+		if s.isPrompt(string(last)) {
 			return clean(string(buf[:len(buf)-len(last)]), cmd), nil
 		}
 	}
+}
+
+// isPrompt is the session's prompt, or its config-mode form such as
+// "dev1(config-if)#" while a change is applied.
+// shortcut: assumes config mode keeps the whole hostname; check on hardware.
+func (s *Session) isPrompt(l string) bool {
+	l = strings.TrimSpace(l)
+	base, priv := strings.CutSuffix(s.prompt, "#")
+	mode, cfg := strings.CutPrefix(l, base+"(config")
+	return l == s.prompt || priv && cfg && strings.HasSuffix(mode, ")#") && !strings.ContainsAny(mode, " \t")
 }
 
 func clean(out, cmd string) string {

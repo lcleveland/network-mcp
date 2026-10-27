@@ -80,6 +80,7 @@ in
     refute "--known-hosts" cmd
     refute "--allow-adhoc" cmd
     refute "--allow-config" cmd
+    refute "--allow-save" cmd
     check "--max-pending-changes 1" cmd
     refute "http-auth-token" creds
   '';
@@ -99,6 +100,7 @@ in
         requestTimeout = "10s";
         allowAdhoc = true;
         allowConfig = true;
+        allowSave = true;
         maxPendingChanges = 2;
         mibDirs = [
           "/etc/network-mcp/mibs"
@@ -119,6 +121,7 @@ in
       }
       ''
         check "--allow-config" cmd
+        check "--allow-save" cmd
         check "--max-pending-changes 2" cmd
         check "--addr 0.0.0.0:9000" cmd
         check "--known-hosts /etc/network-mcp/known_hosts" cmd
@@ -174,6 +177,10 @@ in
       ];
     };
   } "every write_ref";
+
+  module-save-without-config = mustFail "save-without-config" {
+    allowSave = true;
+  } "allowSave needs allowConfig";
 
   module-credential-in-store = mustFail "credential-in-store" {
     credentials.ssh-read = "${builtins.storeDir}/abc-ssh-read";

@@ -20,20 +20,23 @@ import (
 
 var writeRule = config.Rule{Match: config.Match{Kind: "default"}, WriteRef: "ssh-write"}
 
-// startChange serves a fake IOS-XE dev1 whose running config gives the
-// connect address to GigabitEthernet0/0. The read login is refused, so
-// anything that works used the write ref.
-func startChange(t *testing.T, su setup) (*env, string) {
+// startChange serves a stateful fake IOS-XE dev1 with archive path set,
+// whose running config gives the connect address to GigabitEthernet0/0.
+// The read login is refused unless su.opt says otherwise, so anything that
+// works used the write ref.
+func startChange(t *testing.T, su setup) (*env, *sshfake.Device) {
 	t.Helper()
-	cmds := map[string]string{"terminal width 512": "", "terminal length 0": ""}
-	su.eng = &sshfake.Engine{Hostname: "dev1", Commands: cmds}
-	su.opt = sshfake.Options{FailUser: "mcp"}
+	dev := &sshfake.Device{}
+	su.eng = &sshfake.Engine{Hostname: "dev1", Device: dev, Commands: map[string]string{"terminal width 512": "", "terminal length 0": ""}}
+	if su.opt == (sshfake.Options{}) {
+		su.opt = sshfake.Options{FailUser: "mcp"}
+	}
 	su.platform = "cisco_iosxe"
 	e := startWith(t, su)
-	run := string(must(os.ReadFile(napalm+"ios_show_running_config.txt"))) + fakeSecrets +
-		"interface GigabitEthernet0/0\n ip address " + e.fake.Host + " 255.0.0.0\n"
-	cmds["show running-config"] = run
-	return e, run
+	dev.Running = string(must(os.ReadFile(napalm+"ios_show_running_config.txt"))) + fakeSecrets +
+		"interface GigabitEthernet0/0\n ip address " + e.fake.Host + " 255.0.0.0\narchive\n path flash:archive\n"
+	dev.Startup = dev.Running
+	return e, dev
 }
 
 func plan(lines ...string) map[string]any {
@@ -61,7 +64,8 @@ func TestChangeAbsentByDefault(t *testing.T) {
 }
 
 func TestChangePlan(t *testing.T) {
-	e, run := startChange(t, setup{allowConfig: true, rules: []config.Rule{writeRule}})
+	e, dev := startChange(t, setup{allowConfig: true, rules: []config.Rule{writeRule}})
+	run := dev.Running
 	res, _ := e.cs.ListTools(context.Background(), nil)
 	i := slices.IndexFunc(res.Tools, func(tl *mcp.Tool) bool { return tl.Name == "network_change" })
 	if i < 0 {
@@ -95,10 +99,10 @@ func TestChangePlan(t *testing.T) {
 	}
 
 	st, _ := e.call(t, "network_change", map[string]any{"action": "status"})
-	if fmt.Sprint(st["changes"]) != "map[max_pending_changes:1 pending_plans:1]" || len(st["plans"].([]any)) != 1 {
+	if fmt.Sprint(st["changes"]) != "map[max_pending_changes:1 pending_changes:0 pending_plans:1]" || len(st["plans"].([]any)) != 1 {
 		t.Fatalf("status: %v", st)
 	}
-	if ns, _ := e.call(t, "network_status", nil); fmt.Sprint(ns["changes"]) != "map[max_pending_changes:1 pending_plans:1]" ||
+	if ns, _ := e.call(t, "network_status", nil); fmt.Sprint(ns["changes"]) != "map[max_pending_changes:1 pending_changes:0 pending_plans:1]" ||
 		fmt.Sprint(ns["groups"]) != "[core cli export change]" {
 		t.Fatalf("network_status: %v", ns)
 	}
