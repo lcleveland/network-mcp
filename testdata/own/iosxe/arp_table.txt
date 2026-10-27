@@ -1,0 +1,3 @@
+Protocol  Address          Age (min)  Hardware Addr   Type   Interface
+Internet  192.0.2.1            0   0000.5e00.5300  ARPA   Vlan100
+Internet  192.0.2.2          -   0000.5e00.5301  ARPA   Vlan100

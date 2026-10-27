@@ -1,0 +1,26 @@
+{
+  "TABLE_vrf": {
+    "ROW_vrf": {
+      "TABLE_adj": {
+        "ROW_adj": [
+          {
+            "flags": null,
+            "intf-out": "Vlan100",
+            "ip-addr-out": "192.0.2.1",
+            "mac": "0000.5e00.5300",
+            "time-stamp": "PT7M58S"
+          },
+          {
+            "flags": null,
+            "intf-out": "Vlan100",
+            "ip-addr-out": "192.0.2.2",
+            "mac": "0000.5e00.5301",
+            "time-stamp": "PT0S"
+          }
+        ]
+      },
+      "cnt-total": "2",
+      "vrf-name-out": "all"
+    }
+  }
+}

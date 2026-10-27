@@ -1,0 +1,66 @@
+{
+  "TABLE_vrf": {
+    "ROW_vrf": {
+      "TABLE_addrf": {
+        "ROW_addrf": {
+          "TABLE_prefix": {
+            "ROW_prefix": [
+              {
+                "TABLE_path": {
+                  "ROW_path": {
+                    "clientname": "static",
+                    "ipnexthop": "192.0.2.1",
+                    "metric": "0",
+                    "pref": "1",
+                    "ubest": "true",
+                    "uptime": "P21DT4H51M"
+                  }
+                },
+                "attached": "false",
+                "ipprefix": "0.0.0.0/0",
+                "mcast-nhops": "0",
+                "ucast-nhops": "1"
+              },
+              {
+                "TABLE_path": {
+                  "ROW_path": {
+                    "clientname": "direct",
+                    "ifname": "Vlan100",
+                    "ipnexthop": "192.0.2.2",
+                    "metric": "0",
+                    "pref": "0",
+                    "ubest": "true",
+                    "uptime": "P3Y9M9DT7H1M8S"
+                  }
+                },
+                "attached": "true",
+                "ipprefix": "192.0.2.3/24",
+                "mcast-nhops": "0",
+                "ucast-nhops": "1"
+              },
+              {
+                "TABLE_path": {
+                  "ROW_path": {
+                    "clientname": "local",
+                    "ifname": "Vlan100",
+                    "ipnexthop": "192.0.2.2",
+                    "metric": "0",
+                    "pref": "0",
+                    "ubest": "true",
+                    "uptime": "P3Y9M9DT7H1M8S"
+                  }
+                },
+                "attached": "true",
+                "ipprefix": "192.0.2.2/32",
+                "mcast-nhops": "0",
+                "ucast-nhops": "1"
+              }
+            ]
+          },
+          "addrf": "ipv4"
+        }
+      },
+      "vrf-name-out": "default"
+    }
+  }
+}

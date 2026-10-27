@@ -1,6 +1,6 @@
 // Command sanitize makes one captured device transcript safe to commit:
 //
-//	go run ./cmd/sanitize < testdata/raw/x.txt > testdata/<dir>/x.txt
+//	go run ./cmd/sanitize [-denylist .fixture-denylist] < testdata/raw/x.txt > testdata/<dir>/x.txt
 //
 // Hostnames, addresses, domains, serials, usernames, model and firmware
 // strings become documentation values or placeholders; login lines, banners,
@@ -10,6 +10,7 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"io"
 	"os"
@@ -22,13 +23,20 @@ import (
 )
 
 func main() {
+	list := flag.String("denylist", fixtures.DenylistFile, "local file of real names to replace; missing means none")
+	flag.Parse()
+	terms, err := fixtures.Denylist(*list)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
 	in, err := io.ReadAll(os.Stdin)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
-	out := sanitize(string(in))
-	if v := fixtures.Violations(out); len(v) > 0 {
+	out := sanitize(deny(string(in), terms))
+	if v := append(fixtures.Violations(out), fixtures.Denied(out, terms)...); len(v) > 0 {
 		fmt.Fprintf(os.Stderr, "sanitize: still unsafe, fix the input by hand:\n  %s\n", strings.Join(v, "\n  "))
 		os.Exit(1)
 	}
@@ -58,7 +66,7 @@ var (
 		{"fw", regexp.MustCompile(`Software \(([^)\n]+)\)|image file is "([^"\n]+)"`)},
 	}
 	// Already a placeholder, or a word the rules catch by accident.
-	keep = regexp.MustCompile(`^(dev|user|SERIAL|MODEL|fw)\d+$|^Kernel$`)
+	keep = regexp.MustCompile(`^(dev|user|SERIAL|MODEL|fw|term)\d+$|^Kernel$`)
 
 	v4nets = []string{"192.0.2.", "198.51.100.", "203.0.113."}
 )
@@ -86,6 +94,25 @@ func sanitize(text string) string {
 	})
 	text = swap(text, fixtures.IPv6, strings.ToLower, func(n int, _ string) string { return fmt.Sprintf("2001:db8::%x", n+1) })
 	return swap(text, fixtures.FQDN, strings.ToLower, func(n int, _ string) string { return fmt.Sprintf("name%d.example.com", n+1) })
+}
+
+// deny replaces each denylisted term, ignoring case and longest first, by
+// term<n> in list order, catching names the rules cannot see (a hostname in
+// NX-OS JSON, a site in an interface description).
+func deny(text string, terms []string) string {
+	if len(terms) == 0 {
+		return text
+	}
+	repl := map[string]string{}
+	var alts []string
+	for i, t := range terms {
+		repl[strings.ToLower(t)] = "term" + strconv.Itoa(i+1)
+		alts = append(alts, regexp.QuoteMeta(t))
+	}
+	sort.Slice(alts, func(i, j int) bool { return len(alts[i]) > len(alts[j]) })
+	return regexp.MustCompile(`(?i)`+strings.Join(alts, "|")).ReplaceAllStringFunc(text, func(m string) string {
+		return repl[strings.ToLower(m)]
+	})
 }
 
 // dropLines removes login lines, timestamps, secret lines and banner blocks.

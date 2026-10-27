@@ -4,3 +4,4 @@ result-*
 /testdata/raw/
 /.claude/worktrees/
 /.claude/settings.local.json
+/.fixture-denylist

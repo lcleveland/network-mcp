@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
 	"reflect"
 	"slices"
 	"strings"
@@ -183,6 +184,40 @@ func TestGetterArgs(t *testing.T) {
 	for _, tl := range res.Tools {
 		if b, _ := json.Marshal(tl.InputSchema); tl.Name == "network_show" && !strings.Contains(string(b), `"enum":["arp_table","bgp_neighbors","cdp_neighbors"`) {
 			t.Errorf("getter enum: %s", b)
+		}
+	}
+}
+
+// TestOwnCaptures replays sanitized captures from the team's own devices
+// (testdata/own, recorded with cmd/record) through every getter they cover.
+func TestOwnCaptures(t *testing.T) {
+	for _, fam := range []struct{ profile, platform, suffix string }{{"iosxe", "cisco_iosxe", ""}, {"nxos", "cisco_nxos", " | json"}} {
+		dir := filepath.Join("..", "..", "testdata", "own", fam.profile)
+		ents := must(os.ReadDir(dir))
+		cmds := map[string]string{"terminal width 512": "", "terminal width 511": "", "terminal length 0": ""}
+		for _, ent := range ents {
+			g := strings.TrimSuffix(ent.Name(), ".txt")
+			cmds[platform.Profiles[fam.profile][g]+fam.suffix] = string(must(os.ReadFile(filepath.Join(dir, ent.Name()))))
+		}
+		e := startWith(t, setup{eng: &sshfake.Engine{Hostname: "dev1", Commands: cmds}, platform: fam.platform})
+		for _, ent := range ents {
+			g := strings.TrimSuffix(ent.Name(), ".txt")
+			raw := cmds[platform.Profiles[fam.profile][g]+fam.suffix]
+			out, errText := e.call(t, "network_show", map[string]any{"device": "dev1", "getter": g})
+			if fam.suffix == "" {
+				if errText != "" || out["parsed"] != false || out["output"] != text(raw) {
+					t.Errorf("%s/%s: %.300v %s", fam.profile, g, out, errText)
+				}
+				continue
+			}
+			var want any
+			if err := json.Unmarshal([]byte(raw), &want); err != nil {
+				t.Fatalf("%s/%s: capture is not JSON: %v", fam.profile, g, err)
+			}
+			want, _ = output.RedactJSON(want)
+			if errText != "" || out["parsed"] != true || !reflect.DeepEqual(out["data"], want) {
+				t.Errorf("%s/%s: %.300v %s", fam.profile, g, out, errText)
+			}
 		}
 	}
 }
