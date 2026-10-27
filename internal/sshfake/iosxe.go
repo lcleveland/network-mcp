@@ -213,8 +213,8 @@ func configLine(running *string, errs map[string]string, mode *string, cmd strin
 			ind = " "
 		}
 		*running += ind + cmd + "\n"
-		if f := strings.Fields(cmd)[0]; f == "interface" || f == "vlan" || f == "router" {
-			*mode = "config-" + map[string]string{"interface": "if", "vlan": "vlan", "router": "router"}[f]
+		if f := strings.Fields(cmd)[0]; f == "interface" || f == "vlan" || f == "router" || f == "archive" {
+			*mode = "config-" + map[string]string{"interface": "if", "vlan": "vlan", "router": "router", "archive": "archive"}[f]
 		}
 	}
 	return ""

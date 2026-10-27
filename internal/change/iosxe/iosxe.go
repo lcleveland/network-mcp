@@ -51,6 +51,30 @@ func (d Driver) Ready(ctx context.Context, c change.Conn, running string) error 
 	return nil
 }
 
+// HasArchive reports whether the running config sets archive path.
+func HasArchive(running string) bool { return archivePath.MatchString(running) }
+
+// EnableArchive configures archive path on a device without one, for the
+// network_change archive action. It is a plain running-config change: not
+// reverted and not saved. It refuses while the configuration is locked; the
+// caller checks the path took.
+func (Driver) EnableArchive(ctx context.Context, c change.Conn, path string) error {
+	out, err := c.Run(ctx, "show configuration lock")
+	switch {
+	case err != nil:
+		return fmt.Errorf("show configuration lock: %w", err)
+	case lockOwner.MatchString(out):
+		return errors.New("the configuration is locked (show configuration lock)")
+	}
+	for _, l := range []string{"configure terminal", "archive", "path " + path, "end"} {
+		if _, err := run(ctx, c, l); err != nil {
+			c.Run(ctx, "end") // in exec mode only an invalid-input reply
+			return err
+		}
+	}
+	return nil
+}
+
 // Pending treats anything but the documented "none pending" reply as a
 // pending timer.
 func (Driver) Pending(ctx context.Context, c change.Conn) (bool, error) {
