@@ -1,6 +1,7 @@
 // Package creds reads named credential refs from the credentials directory
-// ($CREDENTIALS_DIRECTORY under systemd). A ref is read per use and never
-// cached or logged.
+// ($CREDENTIALS_DIRECTORY under systemd). A secret ref is read per use and
+// never cached or logged; prefixes_ref, structure rather than a login, is
+// read once at startup.
 package creds
 
 import (
