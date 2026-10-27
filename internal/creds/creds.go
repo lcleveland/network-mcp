@@ -59,8 +59,9 @@ func Token(dir, ref string) (string, error) {
 }
 
 // Private checks, without reading it, that ref is a regular file only its
-// owner can access.
-func Private(dir, ref string) error {
+// owner can access. systemd hands LoadCredential files over as 0440 with the
+// service's own group, so with systemd set group read is accepted too.
+func Private(dir, ref string, systemd bool) error {
 	if !ValidRef(ref) {
 		return fmt.Errorf("credential ref %q: names may use only letters, digits, . _ -", ref)
 	}
@@ -68,8 +69,12 @@ func Private(dir, ref string) error {
 	if err != nil {
 		return fmt.Errorf("credential ref %q: %w", ref, errors.Unwrap(err))
 	}
-	if !fi.Mode().IsRegular() || fi.Mode().Perm()&0o077 != 0 {
-		return fmt.Errorf("credential ref %q: must be a regular file with no group or world access, not %v", ref, fi.Mode())
+	deny, want := os.FileMode(0o077), "no group or world access"
+	if systemd {
+		deny, want = 0o037, "no world access and at most group read"
+	}
+	if !fi.Mode().IsRegular() || fi.Mode().Perm()&deny != 0 {
+		return fmt.Errorf("credential ref %q: must be a regular file with %s, not %v", ref, want, fi.Mode())
 	}
 	return nil
 }
