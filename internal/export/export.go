@@ -16,6 +16,9 @@ import (
 	"time"
 	"unicode"
 
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/s3"
+
 	"github.com/lcleveland/network-mcp/internal/config"
 )
 
@@ -35,16 +38,27 @@ type Receipt struct {
 }
 
 // Sink stores one batch per export call and returns a receipt per artifact,
-// in order.
+// in order. reason is the caller's reason and session, a commit message.
 type Sink interface {
 	Put(ctx context.Context, a []Artifact, reason string) ([]Receipt, error)
 }
 
-// New builds the sink for a validated destination.
-func New(name string, d config.Destination) (Sink, error) {
+// New builds the sink for a validated destination; credDir holds its ref.
+func New(name string, d config.Destination, credDir string) (Sink, error) {
 	switch d.Type {
 	case "dir":
 		return Dir{Name: name, Root: d.Path}, nil
+	case "git":
+		return &Git{Name: name, Path: d.Path, Branch: d.Branch, Remote: d.Remote, Credential: d.Credential, CredDir: credDir, KnownHosts: d.KnownHosts}, nil
+	case "s3":
+		o := s3.Options{Region: d.Region, UsePathStyle: d.PathStyle, RequestChecksumCalculation: aws.RequestChecksumCalculationWhenSupported}
+		if d.Endpoint != "" {
+			o.BaseEndpoint = &d.Endpoint
+		}
+		if d.Checksum == "when_required" {
+			o.RequestChecksumCalculation = aws.RequestChecksumCalculationWhenRequired
+		}
+		return S3{Name: name, Bucket: d.Bucket, Prefix: d.Prefix, Credential: d.Credential, CredDir: credDir, Options: o}, nil
 	}
 	return nil, fmt.Errorf("destination %s: unknown type %q", name, d.Type)
 }

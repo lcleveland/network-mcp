@@ -125,6 +125,10 @@ pkgs.testers.runNixOSTest {
             type = "dir";
             path = "/var/lib/network-mcp/export";
           };
+          destinations.repo = {
+            type = "git";
+            path = "/var/lib/network-mcp/repo";
+          };
         };
       };
     };
@@ -213,6 +217,14 @@ pkgs.testers.runNixOSTest {
         assert not tool("network_export", args)["results"][0]["changed"]
         server.succeed("journalctl -u network-mcp | grep -F '\"event\":\"export\"' | grep -F 'vm test'")
 
+    with subtest("network_export commits to a git repo under the hardened unit"):
+        r = tool("network_export", {**args, "destination": "repo"})["results"][0]
+        git = "${pkgs.git}/bin/git -c safe.directory='*' -C /var/lib/network-mcp/repo"
+        assert r["changed"] and r["ref"] == server.succeed(f"{git} rev-parse HEAD").strip(), r
+        msg = server.succeed(f"{git} log -1 --format=%B")
+        assert "vm test" in msg and f"MCP-Session: {sid}" in msg, msg
+        assert "snmp-server community <redacted>" in server.succeed(f"{git} show HEAD:dev1/running.txt")
+
     with subtest("refused commands never reach the device"):
         tool("network_show", {"device": "dev1", "command": "debug all"}, want_error=True)
         tool("network_show", {"device": "dev1", "command": "show version | include x"}, want_error=True)
@@ -220,8 +232,8 @@ pkgs.testers.runNixOSTest {
         received = device.succeed("cat /home/fake/received.log")
         assert "show version" in received, received
         assert "debug" not in received and "include" not in received, received
-        # network_config once, network_export twice; never network_show
-        assert received.count("show running-config") == 3, received
+        # network_config once, network_export three times; never network_show
+        assert received.count("show running-config") == 4, received
 
     with subtest("wrong pinned host key is refused"):
         st = tool("network_status", {"device": "badkey"})

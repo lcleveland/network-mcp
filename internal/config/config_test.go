@@ -157,7 +157,20 @@ func TestParseFile(t *testing.T) {
 		"management_prefixes: [192.0.2.0/24]\nplatforms: {C9K: {}, c9k: {}}":                                                                                  "repeats",
 		"management_prefixes: [192.0.2.0/24]\nplatforms: {c9k: {getters: {x: 'show version | json'}}}":                                                        "character",
 		"management_prefixes: [192.0.2.0/24]\nplatforms: {c9k: {read_allow: ['a b']}}":                                                                        "one keyword",
-		"management_prefixes: [192.0.2.0/24]\ndestinations: {local: {type: s3, path: /x}}":                                                                    "want dir",
+		"management_prefixes: [192.0.2.0/24]\ndestinations: {local: {type: s3, path: /x}}":                                                                    "does not take",
+		"management_prefixes: [192.0.2.0/24]\ndestinations: {local: {type: ftp, path: /x}}":                                                                   "want dir, git or s3",
+		"management_prefixes: [192.0.2.0/24]\ndestinations: {r: {type: git, path: /x, remote: 'ssh://git@example.com/r.git', credential: k}}":                 "known_hosts",
+		"management_prefixes: [192.0.2.0/24]\ndestinations: {r: {type: git, path: /x, remote: 'ssh://git:pw@example.com/r', credential: k, known_hosts: /k}}": "password",
+		"management_prefixes: [192.0.2.0/24]\ndestinations: {r: {type: git, path: /x, remote: 'https://u@example.com/r.git', credential: k}}":                 "userinfo",
+		"management_prefixes: [192.0.2.0/24]\ndestinations: {r: {type: git, path: /x, remote: 'file:///srv/r.git', credential: k}}":                           "remote must be",
+		"management_prefixes: [192.0.2.0/24]\ndestinations: {r: {type: git, path: /x, remote: 'https://example.com/r.git'}}":                                  "credential",
+		"management_prefixes: [192.0.2.0/24]\ndestinations: {r: {type: git, path: /x, credential: k}}":                                                        "need a remote",
+		"management_prefixes: [192.0.2.0/24]\ndestinations: {r: {type: git, path: /x, branch: ../x}}":                                                         "branch",
+		"management_prefixes: [192.0.2.0/24]\ndestinations: {b: {type: s3, region: r, bucket: b}}":                                                            "credential",
+		"management_prefixes: [192.0.2.0/24]\ndestinations: {b: {type: s3, bucket: b, credential: k}}":                                                        "region",
+		"management_prefixes: [192.0.2.0/24]\ndestinations: {b: {type: s3, region: r, bucket: b, credential: k, endpoint: 'http://s3.example.com'}}":          "endpoint",
+		"management_prefixes: [192.0.2.0/24]\ndestinations: {b: {type: s3, region: r, bucket: b, credential: k, prefix: a/../b}}":                             "prefix",
+		"management_prefixes: [192.0.2.0/24]\ndestinations: {b: {type: s3, region: r, bucket: b, credential: k, checksum: always}}":                           "checksum",
 		"management_prefixes: [192.0.2.0/24]\ndestinations: {local: {type: dir, path: x}}":                                                                    "absolute",
 		"management_prefixes: [192.0.2.0/24]\ndestinations: {local: {type: dir, path: /}}":                                                                    "absolute",
 		"management_prefixes: [192.0.2.0/24]\ndestinations: {../x: {type: dir, path: /x}}":                                                                    "name",
@@ -183,6 +196,9 @@ rules:
   - {match: adhoc, read_ref: adhoc-read}
 destinations:
   local: {type: dir, path: /var/lib/network-mcp/export, redact: false}
+  repo: {type: git, path: /var/lib/network-mcp/repo, remote: 'ssh://git@git.example.com/configs.git', credential: push, known_hosts: /etc/kh}
+  aws: {type: s3, region: us-east-1, bucket: configs, credential: s3-key}
+  minio: {type: s3, endpoint: 'https://s3.example.com', region: us-east-1, bucket: configs, prefix: net/, path_style: true, credential: s3-key}
 `))
 	if err != nil {
 		t.Fatal(err)
@@ -192,6 +208,9 @@ destinations:
 	}
 	if d := f.Destinations["local"]; d.Path != "/var/lib/network-mcp/export" || d.Redact == nil || *d.Redact {
 		t.Errorf("destination: %+v", d)
+	}
+	if d := f.Destinations; d["repo"].Branch != "main" || d["aws"].Checksum != "when_supported" || d["minio"].Checksum != "when_required" {
+		t.Errorf("defaults: %+v", d)
 	}
 	if m := f.Rules[1].Match; m.Kind != "platform" || m.Value != "nxos" || f.Rules[4].Match.Kind != "adhoc" || f.Rules[2].SNMP.Ref != "snmp-core" {
 		t.Errorf("%+v", f.Rules)

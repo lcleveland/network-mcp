@@ -17,9 +17,11 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strings"
 	"time"
+	"unicode"
 
 	"gopkg.in/yaml.v3"
 
@@ -67,11 +69,24 @@ type File struct {
 	WriteDeny    []string               `yaml:"write_deny"` // adds to the compiled-in write denylist, never removes
 }
 
-// Destination is one export sink. dir takes path.
+// Destination is one export sink. dir takes path; git also remote, branch,
+// credential and known_hosts; s3 credential and the rest.
 type Destination struct {
-	Type   string `yaml:"type"` // dir
+	Type   string `yaml:"type"` // dir | git | s3
 	Path   string `yaml:"path"`
 	Redact *bool  `yaml:"redact"` // nil means true; false is logged on every export
+
+	Remote     string `yaml:"remote"`      // ssh:// or https://; empty means commit only
+	Branch     string `yaml:"branch"`      // default main
+	Credential string `yaml:"credential"`  // ref: push login or S3 key
+	KnownHosts string `yaml:"known_hosts"` // pins an ssh:// remote's host key; required for one
+
+	Endpoint  string `yaml:"endpoint"` // https://; empty means AWS
+	Region    string `yaml:"region"`
+	Bucket    string `yaml:"bucket"`
+	Prefix    string `yaml:"prefix"`
+	PathStyle bool   `yaml:"path_style"`
+	Checksum  string `yaml:"checksum"` // when_required | when_supported; default when_required with an endpoint
 }
 
 // Source is one inventory source. file takes path; netbox takes the rest.
@@ -224,6 +239,20 @@ func Parse(args []string, getenv func(string) string) (*Config, error) {
 			}
 		}
 	}
+	if c.Enabled("export") { // only existence and mode: refs are read fresh per export
+		for n, d := range c.File.Destinations {
+			if d.Credential != "" {
+				if err := creds.Private(c.CredentialsDir, d.Credential); err != nil {
+					return nil, fmt.Errorf("destination %s: %w", n, err)
+				}
+			}
+			if d.KnownHosts != "" {
+				if _, err := os.Stat(d.KnownHosts); err != nil {
+					return nil, fmt.Errorf("destination %s: known_hosts: %w", n, err)
+				}
+			}
+		}
+	}
 	// v3 noAuth and authNoPriv live in the ref, so the refs are read once here
 	for i, r := range c.File.Rules {
 		if r.SNMP != nil {
@@ -314,19 +343,89 @@ func ParseFile(b []byte) (File, error) {
 		}
 	}
 	for n, d := range f.Destinations {
-		switch {
-		case !creds.ValidRef(n):
+		if !creds.ValidRef(n) {
 			return f, fmt.Errorf("destinations: name %q may use only letters, digits, . _ -", n)
-		case d.Type != "dir":
-			return f, fmt.Errorf("destination %s: unknown type %q (want dir)", n, d.Type)
-		case !filepath.IsAbs(d.Path) || filepath.Clean(d.Path) == "/":
-			return f, fmt.Errorf("destination %s: path must be an absolute directory other than /", n)
 		}
+		if err := validDestination(&d); err != nil {
+			return f, fmt.Errorf("destination %s: %w", n, err)
+		}
+		f.Destinations[n] = d
 	}
 	if err := deny.Validate(f.WriteDeny); err != nil {
 		return f, err
 	}
 	return f, platform.Validate(f.Platforms)
+}
+
+var branchName = regexp.MustCompile(`^[A-Za-z0-9_][A-Za-z0-9._-]*(/[A-Za-z0-9_][A-Za-z0-9._-]*)*$`)
+
+// validDestination checks d and fills the defaults.
+func validDestination(d *Destination) error {
+	x := *d // x keeps only the fields d.Type does not take
+	x.Type, x.Redact = "", nil
+	switch d.Type {
+	case "dir":
+		x.Path = ""
+	case "git":
+		x.Path, x.Remote, x.Branch, x.Credential, x.KnownHosts = "", "", "", "", ""
+	case "s3":
+		x.Endpoint, x.Region, x.Bucket, x.Prefix, x.PathStyle, x.Checksum, x.Credential = "", "", "", "", false, "", ""
+	default:
+		return fmt.Errorf("unknown type %q (want dir, git or s3)", d.Type)
+	}
+	if x != (Destination{}) {
+		return fmt.Errorf("a field is set that type %s does not take", d.Type)
+	}
+	if d.Type != "s3" && (!filepath.IsAbs(d.Path) || filepath.Clean(d.Path) == "/") {
+		return errors.New("path must be an absolute directory other than /")
+	}
+	switch d.Type {
+	case "dir":
+		return nil
+	case "git":
+		d.Branch = or(d.Branch, "main")
+		u, err := url.Parse(d.Remote)
+		switch {
+		case !branchName.MatchString(d.Branch) || strings.Contains(d.Branch, "..") || strings.HasSuffix(d.Branch, ".lock"):
+			return fmt.Errorf("branch %q is not a plain branch name", d.Branch)
+		case d.Remote == "":
+			if d.Credential != "" || d.KnownHosts != "" {
+				return errors.New("credential and known_hosts need a remote")
+			}
+			return nil
+		case err != nil || u.Host == "" || u.RawQuery != "" || u.Scheme != "ssh" && u.Scheme != "https":
+			return errors.New("remote must be ssh://[user@]host/path or https://host/path")
+		case u.Scheme == "https" && (u.User != nil || d.KnownHosts != ""):
+			return errors.New("an https remote takes no userinfo and no known_hosts")
+		case u.Scheme == "ssh" && !filepath.IsAbs(d.KnownHosts):
+			return errors.New("an ssh remote needs known_hosts, an absolute path: host keys are pinned, never trusted on first use")
+		case u.Scheme == "ssh" && u.User != nil && u.User.String() != u.User.Username():
+			return errors.New("remote must not carry a password")
+		}
+	case "s3":
+		u, err := url.Parse(d.Endpoint)
+		switch {
+		case d.Endpoint != "" && (err != nil || u.Scheme != "https" || u.Host == "" || u.User != nil || u.RawQuery != ""):
+			return errors.New("endpoint must be https://host[/path], without credentials or query")
+		case d.Region == "" || d.Bucket == "" || strings.Contains(d.Bucket, "/"):
+			return errors.New("region and bucket are required")
+		case strings.HasPrefix(d.Prefix, "/") || slices.Contains(strings.Split(d.Prefix, "/"), "..") || strings.ContainsFunc(d.Prefix, unicode.IsControl):
+			return fmt.Errorf("prefix %q must be relative, without ..", d.Prefix)
+		}
+		if d.Checksum == "" {
+			d.Checksum = "when_supported"
+			if d.Endpoint != "" { // non-AWS stores may reject the SDK's default checksums
+				d.Checksum = "when_required"
+			}
+		}
+		if d.Checksum != "when_required" && d.Checksum != "when_supported" {
+			return fmt.Errorf("checksum %q (want when_required or when_supported)", d.Checksum)
+		}
+	}
+	if !creds.ValidRef(d.Credential) {
+		return fmt.Errorf("credential %q is not a valid ref name", d.Credential)
+	}
+	return nil
 }
 
 // validSource checks s and fills the NetBox defaults.

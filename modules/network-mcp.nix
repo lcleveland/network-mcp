@@ -30,7 +30,7 @@ let
     lib.attrValues cfg.credentials ++ optional (cfg.bearerTokenFile != null) cfg.bearerTokenFile;
   stateDir = "/var/lib/network-mcp";
   outsideState = lib.filter (p: !(lib.hasPrefix "${stateDir}/" p)) (
-    lib.mapAttrsToList (_: d: d.path or "") (cfg.settings.destinations or { })
+    lib.catAttrs "path" (lib.attrValues (cfg.settings.destinations or { })) # s3 has none
   );
   writeRefs = map (r: r.write_ref) (builtins.filter (r: r ? write_ref) (cfg.settings.rules or [ ]));
   configFile =
@@ -96,8 +96,12 @@ in
         The config file, rendered as YAML and passed with `--config`. It holds
         structure and credential ref names only, never secrets.
 
-        Export destination paths must live under `/var/lib/network-mcp/`
-        (the unit's `StateDirectory`); the hardened unit can write nowhere else.
+        Export destination paths (`dir`, and `git`'s local repo) must live
+        under `/var/lib/network-mcp/` (the unit's `StateDirectory`); the
+        hardened unit can write nowhere else. A `git` or `s3` destination's
+        `credential` is a ref name: give it an entry in `credentials`. A
+        `git` ssh:// remote needs `known_hosts`, a file pinning the remote's
+        host key, outside /home (the unit cannot read it).
       '';
     };
     configFile = mkOption {
@@ -113,7 +117,10 @@ in
         ssh-read = "/run/secrets/network-mcp-ssh-read";
       };
       description = ''
-        Credential refs: ref name to a runtime path holding its JSON. Each is
+        Credential refs: ref name to a runtime path holding its JSON (device
+        logins, and export sinks: git `{username?, private_key}` for ssh or
+        `{username?, token}` for https; s3 `{access_key_id,
+        secret_access_key, session_token?}`). Each is
         passed via systemd `LoadCredential`, so it never enters the Nix store,
         argv or the environment. Use sops-nix, agenix or a root-owned 0400 file.
       '';
