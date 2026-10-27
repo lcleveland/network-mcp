@@ -23,6 +23,7 @@ import (
 	"github.com/lcleveland/network-mcp/internal/inventory"
 	"github.com/lcleveland/network-mcp/internal/output"
 	"github.com/lcleveland/network-mcp/internal/platform"
+	"github.com/lcleveland/network-mcp/internal/snmpfake"
 	"github.com/lcleveland/network-mcp/internal/sshcli"
 	"github.com/lcleveland/network-mcp/internal/sshfake"
 )
@@ -57,7 +58,8 @@ type setup struct {
 	auditW    io.Writer // default: e.audit
 	// change tests
 	allowConfig bool
-	rules       []config.Rule // appended to the default and adhoc rules
+	rules       []config.Rule     // appended to the default and adhoc rules
+	snmp        *snmpfake.Options // dev1 gets a v2c rule against this fake agent
 }
 
 func startWith(t *testing.T, su setup) *env {
@@ -96,6 +98,13 @@ func startWith(t *testing.T, su setup) *env {
 	cfg.File.Rules = append(cfg.File.Rules, su.rules...)
 	os.WriteFile(filepath.Join(dir, "adhoc-read"), []byte(`{"username":"adhoc","password":"`+secret+`"}`), 0o400)
 	os.WriteFile(filepath.Join(dir, "ssh-write"), []byte(`{"username":"mcp-write","password":"`+secret+`"}`), 0o400)
+	if su.snmp != nil {
+		su.snmp.Community = secret
+		a := snmpfake.Start(t, *su.snmp)
+		os.WriteFile(filepath.Join(dir, "snmp-ro"), []byte(`{"community":"`+secret+`"}`), 0o400)
+		cfg.File.Rules = append(cfg.File.Rules, config.Rule{Match: config.Match{Kind: "device", Value: "dev1"},
+			SNMP: &config.SNMP{Version: "v2c", Ref: "snmp-ro", Port: a.Port}})
+	}
 	inv, err := inventory.Load(cfg)
 	if err != nil {
 		t.Fatal(err)

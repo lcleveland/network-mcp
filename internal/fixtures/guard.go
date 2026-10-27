@@ -3,7 +3,9 @@
 package fixtures
 
 import (
+	"encoding/hex"
 	"fmt"
+	"net"
 	"net/netip"
 	"regexp"
 	"strings"
@@ -56,6 +58,38 @@ func Violations(text string) []string {
 		}
 	}
 	return out
+}
+
+// Snmprec returns what the guard scans in a .snmprec file: comments and
+// each value, hex values decoded (6 bytes as a MAC, a 64x value as an IPv4
+// address). OIDs and OID-typed values are dotted numbers, not addresses.
+// shortcut: an address inside an OID index (ipAddrTable, LLDP management
+// address) is not caught; review such fixtures by hand.
+func Snmprec(text string) string {
+	var b strings.Builder
+	for line := range strings.Lines(text) {
+		f := strings.SplitN(strings.TrimSuffix(line, "\n"), "|", 3)
+		switch {
+		case len(f) != 3:
+			b.WriteString(line)
+			continue
+		case strings.TrimSuffix(f[1], "x") == "6":
+			continue
+		}
+		v := f[2]
+		if raw, err := hex.DecodeString(v); err == nil && strings.HasSuffix(f[1], "x") {
+			switch {
+			case len(raw) == 6:
+				v = net.HardwareAddr(raw).String()
+			case len(raw) == 4 && f[1] == "64x":
+				v = net.IP(raw).String()
+			default:
+				v = string(raw)
+			}
+		}
+		b.WriteString(v + "\n")
+	}
+	return b.String()
 }
 
 // okV4 allows documentation and loopback addresses, plus netmasks and

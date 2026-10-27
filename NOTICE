@@ -11,3 +11,9 @@ The secret-redaction patterns in internal/output are adapted from:
 
 A copy of the Apache License, Version 2.0, is at
 https://www.apache.org/licenses/LICENSE-2.0
+
+The MIB modules in internal/mib/mibs are copied unchanged from net-snmp
+5.9.5.2 (https://www.net-snmp.org/, as packaged by nixpkgs in
+share/snmp/mibs), leaving out its NET-SNMP-* and UCD-* modules. They are the
+IETF and IANA MIB modules from the RFCs and IANA registries and keep their own
+copyright notices. net-snmp's COPYING is at internal/mib/mibs/COPYING.

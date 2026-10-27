@@ -46,7 +46,7 @@ func registerStatus(s *mcp.Server, d Deps) {
 		Description: "Without device: the server version, enabled tool groups, the health of each inventory source and, " +
 			"with network_change enabled, the pending plan count.\n\n" +
 			"With device: each connect check in order (management-prefix gate, TCP, pinned host key, read-credential auth, " +
-			"prompt detected), stopping at the first failure. It runs no CLI command. " +
+			"prompt detected), stopping at the first failure; then, if the device has SNMP, an SNMP sysUpTime.0 read. It runs no CLI command. " +
 			"Call this first when network_show fails.\n\n" + UntrustedNote,
 		Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true, OpenWorldHint: new(true)},
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, in StatusInput) (*mcp.CallToolResult, StatusOutput, error) {
@@ -93,39 +93,47 @@ func registerStatus(s *mcp.Server, d Deps) {
 		if !check(gateName, err) {
 			return nil, out, nil
 		}
-		ctx, cancel := context.WithTimeout(ctx, d.Config.RequestTimeout)
-		defer cancel()
-		conn, err := (&net.Dialer{}).DialContext(ctx, "tcp", net.JoinHostPort(g.addr.String(), strconv.Itoa(g.dev.Port)))
-		if !check("tcp", err) {
-			return nil, out, nil
-		}
-		conn.Close()
+		func() { // SSH; a failure stops the SSH checks only
+			ctx, cancel := context.WithTimeout(ctx, d.Config.RequestTimeout)
+			defer cancel()
+			conn, err := (&net.Dialer{}).DialContext(ctx, "tcp", net.JoinHostPort(g.addr.String(), strconv.Itoa(g.dev.Port)))
+			if !check("tcp", err) {
+				return
+			}
+			conn.Close()
 
-		ses, err := d.open(ctx, g)
-		var oe *sshcli.OpenError
-		if errors.As(err, &oe) {
-			// each stage that was passed is OK; the failing one carries the device's error
-			for _, st := range []sshcli.Stage{sshcli.StageHostKey, sshcli.StageAuth, sshcli.StagePrompt} {
-				if st == oe.Stage || (oe.Stage == sshcli.StageConnect && st == sshcli.StageHostKey) {
-					out.Checks = append(out.Checks, Check{Name: string(st), OK: false})
-					break
+			ses, err := d.open(ctx, g)
+			var oe *sshcli.OpenError
+			if errors.As(err, &oe) {
+				// each stage that was passed is OK; the failing one carries the device's error
+				for _, st := range []sshcli.Stage{sshcli.StageHostKey, sshcli.StageAuth, sshcli.StagePrompt} {
+					if st == oe.Stage || (oe.Stage == sshcli.StageConnect && st == sshcli.StageHostKey) {
+						out.Checks = append(out.Checks, Check{Name: string(st), OK: false})
+						break
+					}
+					check(string(st), nil)
 				}
+				out.DeviceError = field(oe.Err.Error(), output.LongCap)
+				out.Untrusted = []string{"device_error"}
+				return
+			}
+			if err != nil { // the read credential itself is unusable
+				check("credential", err)
+				return
+			}
+			defer ses.Close()
+			for _, st := range []sshcli.Stage{sshcli.StageHostKey, sshcli.StageAuth, sshcli.StagePrompt} {
 				check(string(st), nil)
 			}
-			out.DeviceError = field(oe.Err.Error(), output.LongCap)
-			out.Untrusted = []string{"device_error"}
-			return nil, out, nil
+			out.Prompt = field(ses.Prompt(), output.FieldCap)
+			out.Untrusted = []string{"prompt"}
+		}()
+		if g.dev.SNMP != nil {
+			up, err := d.sysUpTime(ctx, g)
+			if check("snmp", err) {
+				out.Checks[len(out.Checks)-1].Detail = up
+			}
 		}
-		if err != nil { // the read credential itself is unusable
-			check("credential", err)
-			return nil, out, nil
-		}
-		defer ses.Close()
-		for _, st := range []sshcli.Stage{sshcli.StageHostKey, sshcli.StageAuth, sshcli.StagePrompt} {
-			check(string(st), nil)
-		}
-		out.Prompt = field(ses.Prompt(), output.FieldCap)
-		out.Untrusted = []string{"prompt"}
 		return nil, out, nil
 	})
 }

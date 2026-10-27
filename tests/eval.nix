@@ -100,6 +100,10 @@ in
         allowAdhoc = true;
         allowConfig = true;
         maxPendingChanges = 2;
+        mibDirs = [
+          "/etc/network-mcp/mibs"
+          "/var/lib/vendor mibs"
+        ];
         logLevel = "debug";
         extraArgs = [ "--stdio=false" ];
         settings = {
@@ -121,6 +125,7 @@ in
         check "--tool-groups core " cmd
         check "--request-timeout 10s" cmd
         check "--allow-adhoc" cmd
+        check "--mib-dir /etc/network-mcp/mibs --mib-dir '/var/lib/vendor mibs'" cmd
         check "--log-level debug" cmd
         check "--stdio=false" cmd
         check "http-auth-token:/run/secrets/bearer" creds

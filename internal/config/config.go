@@ -29,7 +29,7 @@ import (
 )
 
 // Groups are the tool groups --tool-groups may name. core is always on.
-var Groups = []string{"core", "cli", "export", "change"}
+var Groups = []string{"core", "cli", "snmp", "export", "change"}
 
 type Config struct {
 	ConfigPath     string
@@ -45,6 +45,7 @@ type Config struct {
 	Path          string
 	HTTPAuthToken string // never logged
 	AllowAdhoc    bool
+	MIBDirs       []string
 
 	AllowConfig       bool // registers the change group; off by default
 	MaxPendingChanges int
@@ -100,6 +101,7 @@ type Rule struct {
 type SNMP struct {
 	Version string `yaml:"version" json:"version"` // v2c | v3
 	Ref     string `yaml:"ref" json:"ref"`
+	Port    int    `yaml:"port" json:"port,omitempty"` // 0 means 161
 }
 
 // Match is `default`, `adhoc`, or one of {platform|tag|device: value}.
@@ -131,6 +133,7 @@ func (c *Config) LogValue() slog.Value {
 		slog.Bool("allow_adhoc", c.AllowAdhoc),
 		slog.Bool("allow_config", c.AllowConfig),
 		slog.Int("max_pending_changes", c.MaxPendingChanges),
+		slog.Any("mib_dirs", c.MIBDirs),
 	)
 }
 
@@ -158,6 +161,10 @@ func Parse(args []string, getenv func(string) string) (*Config, error) {
 	fs.BoolVar(&c.AllowAdhoc, "allow-adhoc", false, "accept an IP literal inside adhoc_prefixes as a device (generic driver, adhoc rule)")
 	fs.BoolVar(&c.AllowConfig, "allow-config", false, "enable network_change, which plans config changes with each device's write_ref")
 	fs.IntVar(&c.MaxPendingChanges, "max-pending-changes", 1, "applied but unconfirmed changes allowed at once")
+	fs.Func("mib-dir", "directory of extra MIB modules loaded at startup; repeatable; a module that fails to parse refuses startup", func(s string) error {
+		c.MIBDirs = append(c.MIBDirs, s)
+		return nil
+	})
 	fs.BoolVar(&c.ShowVersion, "version", false, "print version and exit")
 	if err := fs.Parse(args); err != nil {
 		return nil, err
@@ -214,6 +221,14 @@ func Parse(args []string, getenv func(string) string) (*Config, error) {
 			}
 			if err := creds.Private(c.CredentialsDir, r.WriteRef); err != nil {
 				return nil, fmt.Errorf("--allow-config: %w", err)
+			}
+		}
+	}
+	// v3 noAuth and authNoPriv live in the ref, so the refs are read once here
+	for i, r := range c.File.Rules {
+		if r.SNMP != nil {
+			if _, err := creds.ReadSNMP(c.CredentialsDir, r.SNMP.Ref, r.SNMP.Version); err != nil {
+				return nil, fmt.Errorf("rules[%d].snmp: %w", i, err)
 			}
 		}
 	}
@@ -293,7 +308,9 @@ func ParseFile(b []byte) (File, error) {
 			r.SNMP != nil && !creds.ValidRef(r.SNMP.Ref):
 			return f, fmt.Errorf("rules[%d]: a ref is not a valid ref name", i)
 		case r.SNMP != nil && r.SNMP.Version != "v2c" && r.SNMP.Version != "v3":
-			return f, fmt.Errorf("rules[%d]: snmp.version %q (want v2c or v3)", i, r.SNMP.Version)
+			return f, fmt.Errorf("rules[%d]: snmp.version %q (want v2c or v3; v1 is refused)", i, r.SNMP.Version)
+		case r.SNMP != nil && (r.SNMP.Port < 0 || r.SNMP.Port > 65535):
+			return f, fmt.Errorf("rules[%d]: bad snmp.port %d", i, r.SNMP.Port)
 		}
 	}
 	for n, d := range f.Destinations {
@@ -349,9 +366,13 @@ func validSource(s *Source, seen map[string]bool) error {
 	return nil
 }
 
-// Enabled reports whether a tool group is on. change also needs --allow-config.
+// Enabled reports whether a tool group is on. change also needs --allow-config;
+// snmp is off when no rule configures SNMP.
 func (c *Config) Enabled(group string) bool {
 	if group == "change" && !c.AllowConfig {
+		return false
+	}
+	if group == "snmp" && !slices.ContainsFunc(c.File.Rules, func(r Rule) bool { return r.SNMP != nil }) {
 		return false
 	}
 	return group == "core" || len(c.Groups) == 0 || slices.Contains(c.Groups, group)

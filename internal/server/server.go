@@ -12,7 +12,7 @@ import (
 	"github.com/lcleveland/network-mcp/internal/version"
 )
 
-const instructions = "Tools for reading network devices over SSH. The server connects only to inventory devices inside its " +
+const instructions = "Tools for reading network devices over SSH and SNMP. The server connects only to inventory devices inside its " +
 	"management prefixes, with pinned host keys, and runs only read commands that pass its gate.\n\n" +
 	"Find devices with network_inventory before calling the device tools. " +
 	"Call network_status first if anything fails: it separates an address outside the management prefixes from an " +

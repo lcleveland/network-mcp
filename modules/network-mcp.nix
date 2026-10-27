@@ -21,6 +21,7 @@ let
     "cli"
     "export"
     "change"
+    "snmp"
   ];
   isLoopback = a: a == "::1" || a == "localhost" || lib.hasPrefix "127." a;
   inStore = p: p != null && lib.hasPrefix builtins.storeDir p;
@@ -59,6 +60,10 @@ let
   ]
   ++ optional cfg.allowAdhoc "--allow-adhoc"
   ++ optional cfg.allowConfig "--allow-config"
+  ++ lib.concatMap (d: [
+    "--mib-dir"
+    d
+  ]) cfg.mibDirs
   ++ optionals (cfg.knownHostsFile != null) [
     "--known-hosts"
     cfg.knownHostsFile
@@ -149,6 +154,16 @@ in
       type = types.ints.positive;
       default = 1;
       description = "Applied but unconfirmed changes allowed at once.";
+    };
+    mibDirs = mkOption {
+      type = types.listOf types.str;
+      default = [ ];
+      example = [ "/etc/network-mcp/mibs" ];
+      description = ''
+        Directories of extra MIB modules (for example vendor MIBs), each passed
+        as `--mib-dir` and loaded at startup on top of the built-in IETF/IANA
+        set. A module that fails to parse refuses startup.
+      '';
     };
 
     listenAddress = mkOption {

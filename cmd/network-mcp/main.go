@@ -1,4 +1,4 @@
-// Command network-mcp is an MCP server that reads network devices over SSH.
+// Command network-mcp is an MCP server that reads network devices over SSH and SNMP.
 package main
 
 import (
@@ -15,6 +15,7 @@ import (
 	"github.com/lcleveland/network-mcp/internal/audit"
 	"github.com/lcleveland/network-mcp/internal/config"
 	"github.com/lcleveland/network-mcp/internal/inventory"
+	"github.com/lcleveland/network-mcp/internal/mib"
 	"github.com/lcleveland/network-mcp/internal/server"
 	"github.com/lcleveland/network-mcp/internal/tools"
 	"github.com/lcleveland/network-mcp/internal/version"
@@ -55,6 +56,9 @@ func setup(args []string, getenv func(string) string) (*tools.Deps, error) {
 	}
 	inv, err := inventory.Load(cfg)
 	if err != nil {
+		return nil, err
+	}
+	if err := mib.Load(cfg.MIBDirs...); err != nil {
 		return nil, err
 	}
 	// every device is SSH until other drivers exist
