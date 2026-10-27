@@ -33,6 +33,15 @@ const deadlineGrace = time.Minute
 // drivers are the platforms that can apply a change.
 var drivers = map[string]change.Driver{platform.IOSXE: iosxe.Driver{}, platform.NXOS: nxos.Driver{}}
 
+// changeDriver is the change driver for a plan or platform: IOS-XE with
+// revert: server gets the flash-snapshot driver. nil means none.
+func changeDriver(driver, revert string) change.Driver {
+	if driver == platform.IOSXE && revert == platform.RevertServer {
+		return iosxe.ServerDriver{}
+	}
+	return drivers[driver]
+}
+
 // grace is how long after its deadline a change is checked: the device
 // timer's head start, or none when the server reverts it.
 func grace(drv change.Driver) time.Duration {
@@ -98,8 +107,8 @@ func (d Deps) apply(ctx context.Context, sid, client string, in ChangeInput) (Ch
 	if err = cmp.Or(gerr, err); err != nil {
 		return ChangeOutput{}, d.refuse(ev, "refused", err)
 	}
-	drv, ok := drivers[p.Driver]
-	if !ok {
+	drv := changeDriver(p.Driver, p.Revert)
+	if drv == nil {
 		return ChangeOutput{}, d.refuse(ev, "refused", fmt.Errorf("applying changes to %s devices is not supported yet", p.Driver))
 	}
 	if err := d.Changes.Reserve(p.Device, d.Config.MaxPendingChanges); err != nil {
@@ -160,9 +169,7 @@ func (d Deps) apply(ctx context.Context, sid, client string, in ChangeInput) (Ch
 	f, _ := output.NewFilter(nil, nil, "")
 	out.Diff, out.Redactions, out.Truncation = f.Text(diff, false)
 	out.Outcome, out.PostHash, out.Deadline, out.Untrusted = "applied", c.PostHash, ev.Deadline, []string{"diff"}
-	if !drv.DeviceReverts() {
-		out.Warning = fmt.Sprintf(nxos.Warning, c.ID)
-	}
+	out.Warning = drv.Warning(c.ID)
 	return out, nil
 }
 
@@ -229,7 +236,7 @@ func (d Deps) confirm(ctx context.Context, sid, client string, in ChangeInput) (
 		return ChangeOutput{}, err
 	}
 	out := ChangeOutput{Device: c.Plan.Device, ChangeID: c.ID, PostHash: c.PostHash}
-	drv := drivers[c.Plan.Driver]
+	drv := changeDriver(c.Plan.Driver, c.Plan.Revert)
 	via, err := onDevice(ctx, conn, c, func(s change.Conn) error { return drv.Confirm(ctx, s, c.ID) })
 	ev.Detail = map[string]string{"via": via}
 	if err != nil {
@@ -277,7 +284,7 @@ func (d Deps) rollback(ctx context.Context, sid, client string, in ChangeInput) 
 		return ChangeOutput{}, err
 	}
 	out := ChangeOutput{Device: c.Plan.Device, ChangeID: c.ID, PreHash: c.Plan.PreHash}
-	drv := drivers[c.Plan.Driver]
+	drv := changeDriver(c.Plan.Driver, c.Plan.Revert)
 	via, err := onDevice(ctx, conn, c, func(s change.Conn) error { return drv.Rollback(ctx, s, c.ID) })
 	ev.Detail = map[string]string{"via": via}
 	if err != nil {
@@ -304,7 +311,7 @@ func (d Deps) rollback(ctx context.Context, sid, client string, in ChangeInput) 
 // grace): the device timer should have reverted it, or the server reverts it now.
 func (d Deps) sweep() {
 	for _, c := range d.Changes.Changes() {
-		if d.Changes.Now().Before(c.Deadline.Add(grace(drivers[c.Plan.Driver]))) {
+		if d.Changes.Now().Before(c.Deadline.Add(grace(changeDriver(c.Plan.Driver, c.Plan.Revert)))) {
 			continue
 		}
 		c.Lock()
@@ -322,7 +329,7 @@ func (d Deps) deadlineCheck(c *change.Change) {
 	ctx, cancel := context.WithTimeout(context.Background(), d.Config.RequestTimeout)
 	defer cancel()
 	ev := writeEvent("deadline", c.Plan.Session, "", c.Plan.Reason, c.Plan, c)
-	drv := drivers[c.Plan.Driver]
+	drv := changeDriver(c.Plan.Driver, c.Plan.Revert)
 	var derr error // the server's revert or dropping the marker
 	h, err := func() (string, error) {
 		g, err := d.target(ctx, c.Plan)
@@ -374,7 +381,8 @@ func (d Deps) save(ctx context.Context, sid, client string, in ChangeInput) (Cha
 	}
 	ev.Device, ev.Address, ev.Platform, ev.CredRef = g.dev.Name, g.addr.String(), g.plat.Driver, g.dev.WriteRef
 	ev.HostKey, _ = sshcli.HostKey(d.Config.KnownHosts, g.addr, g.dev.Port)
-	drv, ok := drivers[g.plat.Driver]
+	drv := changeDriver(g.plat.Driver, g.plat.Revert)
+	ok := drv != nil
 	want := d.Changes.Confirmed(g.dev.Name)
 	switch {
 	case !ok || g.dev.Adhoc || g.dev.WriteRef == "":

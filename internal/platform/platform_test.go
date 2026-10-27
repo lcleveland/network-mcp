@@ -72,3 +72,22 @@ func TestGettersPassGate(t *testing.T) {
 		}
 	}
 }
+
+func TestRevert(t *testing.T) {
+	if err := Validate(map[string]Config{"cisco_iosxe": {Revert: RevertServer}, "c9k": {Driver: IOSXE, Revert: RevertDevice}}); err != nil {
+		t.Fatal(err)
+	}
+	if d := Resolve("CISCO_IOSXE", map[string]Config{"cisco_iosxe": {Revert: RevertServer}}); d.Driver != IOSXE || d.Revert != RevertServer {
+		t.Fatalf("%+v", d)
+	}
+	for _, bad := range []map[string]Config{
+		{"cisco_iosxe": {Revert: "timer"}},
+		{"cisco_nxos": {Revert: RevertServer}},
+		{"cisco_iosxe": {Driver: NXOS, Revert: RevertServer}},
+		{"weird": {Revert: RevertServer}},
+	} {
+		if err := Validate(bad); err == nil || !strings.Contains(err.Error(), "revert") {
+			t.Errorf("%v: %v", bad, err)
+		}
+	}
+}

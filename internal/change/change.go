@@ -34,7 +34,8 @@ type Plan struct {
 	Address  string    `json:"address"`  // the address dialed
 	HostKey  string    `json:"host_key"` // pinned key fingerprint(s)
 	Driver   string    `json:"driver"`
-	Lines    []string  `json:"lines"` // normalized
+	Revert   string    `json:"revert,omitempty"` // the platform's revert mode, fixed at plan time
+	Lines    []string  `json:"lines"`            // normalized
 	PreHash  string    `json:"pre_hash"`
 	WriteRef string    `json:"write_ref"` // the ref name, never its contents
 	Username string    `json:"username"`
@@ -85,6 +86,8 @@ type Driver interface {
 	// DeviceReverts reports whether the device reverts an unconfirmed
 	// change on its own; if not, the server rolls it back at the deadline.
 	DeviceReverts() bool
+	// Warning is told to the caller of every apply; empty for none.
+	Warning(id string) string
 }
 
 // Change is an applied, unconfirmed change. Its fields are fixed once
