@@ -7,6 +7,7 @@ package config
 
 import (
 	"bytes"
+	"cmp"
 	"errors"
 	"flag"
 	"fmt"
@@ -169,7 +170,7 @@ func Parse(args []string, getenv func(string) string) (*Config, error) {
 	fs.StringVar(&c.KnownHosts, "known-hosts", getenv("NETWORK_MCP_KNOWN_HOSTS"), "known_hosts file pinning device host keys (env NETWORK_MCP_KNOWN_HOSTS)")
 	fs.StringVar(&groups, "tool-groups", "", "comma-separated tool groups to enable (default all): "+strings.Join(Groups, ","))
 	fs.DurationVar(&c.RequestTimeout, "request-timeout", 30*time.Second, "per-request timeout to a device")
-	fs.StringVar(&logLevel, "log-level", or(getenv("NETWORK_MCP_LOG_LEVEL"), "info"), "debug|info|warn|error (env NETWORK_MCP_LOG_LEVEL)")
+	fs.StringVar(&logLevel, "log-level", cmp.Or(getenv("NETWORK_MCP_LOG_LEVEL"), "info"), "debug|info|warn|error (env NETWORK_MCP_LOG_LEVEL)")
 	fs.BoolVar(&stdio, "stdio", false, "serve over stdio (default)")
 	fs.BoolVar(&c.HTTP, "http", false, "serve over streamable HTTP")
 	fs.StringVar(&c.Addr, "addr", "127.0.0.1:8232", "HTTP listen address")
@@ -389,7 +390,7 @@ func validDestination(d *Destination) error {
 	case "dir":
 		return nil
 	case "git":
-		d.Branch = or(d.Branch, "main")
+		d.Branch = cmp.Or(d.Branch, "main")
 		u, err := url.Parse(d.Remote)
 		switch {
 		case !branchName.MatchString(d.Branch) || strings.Contains(d.Branch, "..") || strings.HasSuffix(d.Branch, ".lock"):
@@ -481,11 +482,4 @@ func (c *Config) Enabled(group string) bool {
 		return false
 	}
 	return group == "core" || len(c.Groups) == 0 || slices.Contains(c.Groups, group)
-}
-
-func or(a, b string) string {
-	if a != "" {
-		return a
-	}
-	return b
 }

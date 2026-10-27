@@ -98,7 +98,7 @@ func registerShow(s *mcp.Server, d Deps) {
 		defer cancel()
 		ses, err := d.open(ctx, g)
 		if err != nil {
-			return failed(out, err)
+			return showFailed(out, err)
 		}
 		defer ses.Close()
 		nxos := g.plat.Driver == platform.NXOS
@@ -108,7 +108,7 @@ func registerShow(s *mcp.Server, d Deps) {
 		raw, err = ses.Run(ctx, cmd)
 		limited := errors.Is(err, sshcli.ErrDeviceLimit)
 		if err != nil && !limited {
-			return failed(out, err)
+			return showFailed(out, err)
 		}
 		if v, ok := decodeJSON(raw, nxos && !limited); ok {
 			v, n := output.RedactJSON(v)
@@ -140,7 +140,7 @@ func decodeJSON(s string, try bool) (any, bool) {
 	return v, true
 }
 
-func failed(out ShowOutput, err error) (*mcp.CallToolResult, ShowOutput, error) {
+func showFailed(out ShowOutput, err error) (*mcp.CallToolResult, ShowOutput, error) {
 	out.DeviceError, out.Redactions, out.Untrusted = deviceError(err)
 	return nil, out, nil
 }
