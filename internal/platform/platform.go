@@ -28,7 +28,17 @@ type Config struct {
 	ReadAllow []string          `yaml:"read_allow"`
 	ReadDeny  []string          `yaml:"read_deny"`
 	Config    ConfigCmds        `yaml:"config"` // over the profile's
+	// Revert is how an IOS-XE change is undone: device (the default, the
+	// device's archive revert timer) or server (a flash snapshot the server
+	// restores, for devices without archive path).
+	Revert string `yaml:"revert"`
 }
+
+// Revert modes.
+const (
+	RevertDevice = "device"
+	RevertServer = "server"
+)
 
 // ConfigCmds are what network_config sends. They skip the read gate's deny
 // list, which blocks config dumps on purpose, but not its character set.
@@ -86,6 +96,7 @@ func with(m map[string]string, kv ...string) map[string]string {
 // Device is what a platform value resolves to.
 type Device struct {
 	Driver, Profile string
+	Revert          string // "" means the driver's default
 	Getters         map[string]string
 	Gate            gate.Ext
 	Config          ConfigCmds
@@ -103,7 +114,7 @@ func Resolve(value string, cfg map[string]Config) Device {
 	var cc ConfigCmds
 	for k, c := range cfg {
 		if strings.EqualFold(k, value) {
-			d.Driver, d.Profile = cmp.Or(c.Driver, d.Driver), cmp.Or(c.Profile, d.Profile)
+			d.Driver, d.Profile, d.Revert = cmp.Or(c.Driver, d.Driver), cmp.Or(c.Profile, d.Profile), c.Revert
 			d.Gate, extra, cc = gate.Ext{Allow: c.ReadAllow, Deny: c.ReadDeny}, c.Getters, c.Config
 		}
 	}
@@ -131,6 +142,10 @@ func Validate(cfg map[string]Config) error {
 			return fmt.Errorf("platforms.%s.driver: unknown %q (want %s, %s or %s)", k, c.Driver, IOSXE, NXOS, Generic)
 		case c.Profile != "" && !ok:
 			return fmt.Errorf("platforms.%s.profile: unknown %q (want %s)", k, c.Profile, strings.Join(slices.Sorted(maps.Keys(Profiles)), ", "))
+		case c.Revert != "" && c.Revert != RevertDevice && c.Revert != RevertServer:
+			return fmt.Errorf("platforms.%s.revert: unknown %q (want %s or %s)", k, c.Revert, RevertDevice, RevertServer)
+		case c.Revert == RevertServer && cmp.Or(c.Driver, Resolve(k, nil).Driver) != IOSXE:
+			return fmt.Errorf("platforms.%s.revert: server is for IOS-XE only (NX-OS is always server-reverted)", k)
 		}
 		seen[l] = true
 		x := gate.Ext{Allow: c.ReadAllow, Deny: c.ReadDeny}

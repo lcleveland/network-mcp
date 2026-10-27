@@ -9,6 +9,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"golang.org/x/crypto/ssh"
 
+	"github.com/lcleveland/network-mcp/internal/change/iosxe"
 	"github.com/lcleveland/network-mcp/internal/change/nxos"
 	"github.com/lcleveland/network-mcp/internal/config"
 	"github.com/lcleveland/network-mcp/internal/inventory"
@@ -154,10 +155,17 @@ func registerStatus(s *mcp.Server, d Deps) {
 			}
 			out.Prompt = field(ses.Prompt(), output.FieldCap)
 			out.Untrusted = []string{"prompt"}
-			if g.plat.Driver == platform.NXOS {
-				names, err := nxos.Checkpoints(ctx, ses)
+			list := nxos.Checkpoints
+			switch {
+			case g.plat.Driver == platform.IOSXE && g.plat.Revert == platform.RevertServer:
+				list = iosxe.Snapshots // flash:network-mcp-*.cfg, the server-reverted IOS-XE marker
+			case g.plat.Driver != platform.NXOS:
+				list = nil
+			}
+			if list != nil {
+				names, err := list(ctx, ses)
 				if err == nil && len(names) > 0 {
-					err = errors.New("network-mcp-* checkpoints mark changes nobody confirmed or rolled back; see stale_checkpoints and the README's Recovering a leftover checkpoint")
+					err = errors.New("network-mcp-* checkpoints mark changes nobody confirmed or rolled back (on IOS-XE, flash snapshots); see stale_checkpoints and the README's recovery steps")
 					out.Checkpoints, out.Untrusted = names, append(out.Untrusted, "stale_checkpoints")
 				}
 				check("checkpoints", err)

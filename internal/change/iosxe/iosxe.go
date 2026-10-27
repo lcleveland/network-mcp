@@ -28,11 +28,12 @@ var (
 	copyDest    = regexp.MustCompile(`\[startup-config\]\?\s*$`)
 )
 
-// Ready needs archive path set (the server never configures it), no revert
+// Ready needs archive path set (the server never configures it; a platform
+// with revert: server uses ServerDriver instead), no revert
 // timer pending and no configuration lock.
 func (d Driver) Ready(ctx context.Context, c change.Conn, running string) error {
 	if !archivePath.MatchString(running) {
-		return errors.New("archive path is not configured, so the device cannot revert a change on its own; configure archive path first (the server never does)")
+		return errors.New("archive path is not configured, so the device cannot revert a change on its own; configure archive path first (the server never does), or set revert: server on its platform for a server-driven revert")
 	}
 	switch p, err := d.Pending(ctx, c); {
 	case err != nil:
@@ -118,6 +119,8 @@ func (Driver) Save(ctx context.Context, c change.Conn) error {
 func (Driver) Forget(context.Context, change.Conn, string) error { return nil }
 
 func (Driver) DeviceReverts() bool { return true }
+
+func (Driver) Warning(string) string { return "" }
 
 // run fails on any line of the reply that starts with %, not only the
 // driver's known failure strings.

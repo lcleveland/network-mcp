@@ -93,6 +93,8 @@ func (d Driver) Forget(ctx context.Context, c change.Conn, id string) error {
 
 func (Driver) DeviceReverts() bool { return false }
 
+func (Driver) Warning(id string) string { return fmt.Sprintf(Warning, id) }
+
 func (Driver) Save(ctx context.Context, c change.Conn) error {
 	out, err := run(ctx, c, "copy running-config startup-config")
 	if err == nil && !strings.Contains(out, "Copy complete") {

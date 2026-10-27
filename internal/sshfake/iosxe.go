@@ -2,6 +2,7 @@ package sshfake
 
 import (
 	"fmt"
+	"maps"
 	"regexp"
 	"slices"
 	"strings"
@@ -26,8 +27,9 @@ type Device struct {
 
 	mu       sync.Mutex
 	sessions int
-	timer    int    // session that started the pending timer; 0 none
-	backup   string // running config when the timer started
+	timer    int               // session that started the pending timer; 0 none
+	backup   string            // running config when the timer started
+	files    map[string]string // flash: file name -> content (server-reverted snapshots)
 	log      []string
 }
 
@@ -36,6 +38,7 @@ const noTimer = "%No Rollback Confirmed Change pending\n"
 var (
 	revertTimer = regexp.MustCompile(`^configure terminal revert timer (\d+)$`)
 	archivePath = regexp.MustCompile(`(?m)^archive\n(?: .*\n)*? path \S`)
+	flashCmd    = regexp.MustCompile(`^(copy running-config|delete /force|configure replace|show archive config differences) flash:(\S+?)(?: force| system:running-config)?$`)
 )
 
 // Expire fires a pending revert timer, as the device does at its deadline.
@@ -45,6 +48,27 @@ func (d *Device) Expire() {
 	if d.timer != 0 {
 		d.Running, d.timer = d.backup, 0
 	}
+}
+
+// Put writes a flash: file, as another process or operator would.
+func (d *Device) Put(name, content string) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	d.put(name, content)
+}
+
+func (d *Device) put(name, content string) {
+	if d.files == nil {
+		d.files = map[string]string{}
+	}
+	d.files[name] = content
+}
+
+// Files lists the flash: file names.
+func (d *Device) Files() []string {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	return slices.Sorted(maps.Keys(d.files))
 }
 
 // Pending reports whether a revert timer is running.
@@ -95,11 +119,41 @@ func (d *Device) handle(sid int, mode *string, cmd string, ask func(string) erro
 		}
 		return ""
 	}
+	if m := flashCmd.FindStringSubmatch(cmd); m != nil {
+		op, name := m[1], m[2]
+		saved, ok := d.files[name]
+		switch {
+		case op == "copy running-config":
+			if ask("Destination filename ["+name+"]? ") != nil {
+				return "", true
+			}
+			d.put(name, d.Running)
+			return fmt.Sprintf("%d bytes copied in 0.123 secs (1000 bytes/sec)\n", len(d.Running)), true
+		case !ok:
+			return "%Error opening flash:" + name + " (No such file or directory)\n", true
+		case op == "delete /force":
+			delete(d.files, name)
+			return "", true
+		case op == "show archive config differences":
+			return diff(saved, d.Running), true
+		}
+		d.Running = saved // configure replace
+		return "Total number of passes: 1\nRollback Done\n", true
+	}
 	switch {
+	case cmd == "dir flash:":
+		out := "Directory of flash:/\n\n"
+		for _, n := range slices.Sorted(maps.Keys(d.files)) {
+			out += fmt.Sprintf("  1  -rw-  %d  Oct 27 2026 12:00:00 +00:00  %s\n", len(d.files[n]), n)
+		}
+		return out + "\n1621966848 bytes total (1015734272 bytes free)\n", true
 	case cmd == "show running-config":
 		return d.Running, true
 	case cmd == "show startup-config":
 		return d.Startup, true
+	case cmd == "configure terminal":
+		*mode = "config"
+		return "Enter configuration commands, one per line.  End with CNTL/Z.\n", true
 	case cmd == "show archive config rollback timer":
 		if d.timer == 0 {
 			return noTimer, true

@@ -17,6 +17,7 @@ import (
 	"github.com/lcleveland/network-mcp/internal/change"
 	"github.com/lcleveland/network-mcp/internal/change/deny"
 	"github.com/lcleveland/network-mcp/internal/change/hash"
+	"github.com/lcleveland/network-mcp/internal/change/iosxe"
 	"github.com/lcleveland/network-mcp/internal/change/nxos"
 	"github.com/lcleveland/network-mcp/internal/creds"
 	"github.com/lcleveland/network-mcp/internal/output"
@@ -226,14 +227,16 @@ func registerChange(s *mcp.Server, d Deps) {
 			"configure terminal revert timer, so the device reverts on its own unless confirmed before the deadline; any % " +
 			"error reverts at once. NX-OS: refused while any network-mcp-* checkpoint is on the device. The server creates " +
 			"checkpoint network-mcp-<change_id>, sends the lines, and rolls back to it at the deadline unless confirmed; any " +
-			"error rolls back at once. " + fmt.Sprintf(nxos.Warning, "<change_id>") + " Returns change_id, deadline, " +
-			"post_hash, the device's diff and, on NX-OS, that warning.\n\n" +
+			"error rolls back at once. " + fmt.Sprintf(nxos.Warning, "<change_id>") + " IOS-XE on a platform with revert: " +
+			"server (no archive needed) works the same way with a flash:network-mcp-<change_id>.cfg snapshot restored by " +
+			"configure replace, and the same risk. Returns change_id, deadline, post_hash, the device's diff and, when the " +
+			"server reverts, that warning.\n\n" +
 			"confirm: change_id. From a new SSH session (proving the device is still reachable), checks post_hash and stops " +
-			"the revert (NX-OS: deletes the checkpoint). It does not save.\n\nrollback: change_id. Reverts now and checks " +
-			"pre_hash (NX-OS: then deletes the checkpoint).\n\n" + save +
-			"status: this session's plans and pending changes; with change_id of an NX-OS change, also the other " +
-			"network-mcp-* checkpoints on its device (stale_checkpoints). After a restart there are no change records; list " +
-			"leftover network-mcp-* checkpoints with network_status and device.\n\n" + UntrustedNote,
+			"the revert (server-reverted: deletes the checkpoint or snapshot). It does not save.\n\nrollback: change_id. " +
+			"Reverts now and checks pre_hash (server-reverted: then deletes the checkpoint or snapshot).\n\n" + save +
+			"status: this session's plans and pending changes; with change_id of a server-reverted change, also the other " +
+			"network-mcp-* checkpoints or snapshots on its device (stale_checkpoints). After a restart there are no change " +
+			"records; list leftovers with network_status and device.\n\n" + UntrustedNote,
 		InputSchema: in,
 		Annotations: &mcp.ToolAnnotations{DestructiveHint: new(true), OpenWorldHint: new(true)},
 	}, func(ctx context.Context, req *mcp.CallToolRequest, in ChangeInput) (*mcp.CallToolResult, ChangeOutput, error) {
@@ -277,13 +280,18 @@ func (d Deps) changeStatus(sid string) ChangeOutput {
 	return out
 }
 
-// stale lists the network-mcp-* checkpoints, other than the change's own,
-// on the NX-OS device of the session's change: changes nobody confirmed or
-// rolled back. It sends no config and is not audited.
+// stale lists the network-mcp-* checkpoints (NX-OS) or flash snapshots
+// (server-reverted IOS-XE), other than the change's own, on the device of
+// the session's change: changes nobody confirmed or rolled back. It sends no
+// config and is not audited.
 func (d Deps) stale(ctx context.Context, sid, id string) ([]string, error) {
 	c, err := d.Changes.Get(id, sid)
-	if err != nil || c.Plan.Driver != platform.NXOS {
+	if err != nil || changeDriver(c.Plan.Driver, c.Plan.Revert).DeviceReverts() {
 		return nil, err
+	}
+	list, own := nxos.Checkpoints, nxos.Prefix+c.ID
+	if c.Plan.Driver == platform.IOSXE {
+		list, own = iosxe.Snapshots, iosxe.Prefix+c.ID+".cfg"
 	}
 	g, err := d.target(ctx, c.Plan)
 	if err != nil {
@@ -294,8 +302,8 @@ func (d Deps) stale(ctx context.Context, sid, id string) ([]string, error) {
 		return nil, err
 	}
 	defer conn.Close()
-	names, err := nxos.Checkpoints(ctx, conn)
-	return slices.DeleteFunc(names, func(n string) bool { return n == nxos.Prefix+c.ID }), err
+	names, err := list(ctx, conn)
+	return slices.DeleteFunc(names, func(n string) bool { return n == own }), err
 }
 
 // plan never changes the device: it reads the running config only.
@@ -348,7 +356,7 @@ func (d Deps) plan(ctx context.Context, sid, client string, in ChangeInput) (Cha
 	ev.PreHash = hash.Sum(raw)
 
 	p, err := d.Changes.Add(change.Plan{
-		Device: g.dev.Name, Address: ev.Address, HostKey: ev.HostKey, Driver: g.plat.Driver, Lines: lines,
+		Device: g.dev.Name, Address: ev.Address, HostKey: ev.HostKey, Driver: g.plat.Driver, Revert: g.plat.Revert, Lines: lines,
 		PreHash: ev.PreHash, WriteRef: g.dev.WriteRef, Username: c.Username, Reason: in.Reason, Session: sid,
 	}, func(p change.Plan) error {
 		ev.PlanID, ev.Outcome = p.ID, "ok"
