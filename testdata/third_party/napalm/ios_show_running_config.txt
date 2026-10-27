@@ -1,0 +1,148 @@
+Building configuration...
+
+Current configuration : 1366 bytes
+!
+!
+version fw1
+service timestamps debug datetime msec
+service timestamps log datetime msec
+no platform punt-keepalive disable-kernel-core
+platform console auto
+!
+hostname dev1
+!
+boot-start-marker
+boot-end-marker
+!
+!
+!
+aaa new-model
+!
+!
+aaa authentication login default local
+aaa authorization exec default local
+!
+!
+!
+!
+!
+aaa session-id common
+!
+ip vrf MGMT
+!
+!
+!
+!
+!
+!
+!
+!
+!
+
+
+ip domain name name1.example.com
+
+!
+!
+!
+!
+!
+!
+!
+!
+!
+!
+subscriber templating
+!
+multilink bundle-name authenticated
+!
+!
+!
+!
+!
+!
+!
+!
+!
+!
+!
+!
+!
+license udi pid MODEL1 sn SERIAL1
+spanning-tree extend system-id
+!
+!
+redundancy
+!
+!
+!
+!
+!
+!
+!
+!
+!
+!
+!
+!
+!
+!
+!
+!
+!
+!
+!
+!
+!
+!
+!
+interface Loopback0
+ ip address 192.0.2.1 255.255.255.255
+!
+interface GigabitEthernet1
+ ip vrf forwarding MGMT
+ ip address 192.0.2.2 255.255.255.0
+ negotiation auto
+!
+interface GigabitEthernet2
+ ip address 192.0.2.3 255.255.255.0
+ negotiation auto
+!
+interface GigabitEthernet3
+ no ip address
+ shutdown
+ negotiation auto
+!
+router ospf 1
+ redistribute connected subnets
+ network 192.0.2.4 0.0.0.255 area 0
+!
+!
+virtual-service csr_mgmt
+!
+ip forward-protocol nd
+!
+no ip http server
+no ip http secure-server
+!
+!
+!
+!
+!
+!
+control-plane
+!
+ !
+ !
+ !
+ !
+!
+!
+!
+!
+!
+line con 0
+line vty 0 4
+!
+!
+end

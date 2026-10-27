@@ -1,0 +1,97 @@
+------------------------------------------------
+Local Intf: Gi1/0/2
+Chassis id: 0000.5e00.5300
+Port id: 502
+Port Description: ge-0/0/0.0
+System Name - not advertised
+
+System Description:
+Juniper Networks, Inc. MODEL1 , version fw1 Build date: 2015-02-12 11:25:30 UTC
+
+Time remaining: 116 seconds
+System Capabilities: B,R
+Enabled Capabilities: B,R
+Management Addresses - not advertised
+Auto Negotiation - supported, enabled
+Physical media capabilities:
+    1000baseT(FD)
+    Symm, Asym Pause(FD)
+    100base-TX(FD)
+    100base-TX(HD)
+    10base-T(FD)
+    10base-T(HD)
+Media Attachment Unit type - not advertised
+Vlan ID: 1
+
+MED Information:
+
+    MED Codes:
+          (NP) Network Policy, (LI) Location Identification
+          (PS) Power Source Entity, (PD) Power Device
+          (IN) Inventory
+
+    Inventory information - not advertised
+    Capabilities: NP, LI, PS
+    Device type: Network connectivity
+    Network Policies - not advertised
+    Power requirements - not advertised
+    Location - not advertised
+
+------------------------------------------------
+Local Intf: Gi1/0/1
+Chassis id: 0000.5e00.5301
+Port id: 0000.5e00.5301
+Port Description: 13
+System Name: dev3
+
+System Description:
+HPE OfficeConnect Switch 1820 48G J9981A, PT.02.01, Linux 3.6.5-79c95a77, U-Boot 2012.10-00116-g3ab515c (Jul 30 2014 - 10:52:01)
+
+Time remaining: 91 seconds
+System Capabilities: B
+Enabled Capabilities: B
+Management Addresses:
+    IP: 192.0.2.1
+    OID:
+        192.0.2.2.192.0.2.3.192.0.2.4.192.0.2.5.192.0.2.6.192.0.2.7.192.0.2.8.
+Auto Negotiation - not supported
+Physical media capabilities - not advertised
+Media Attachment Unit type - not advertised
+Vlan ID: - not advertised
+
+------------------------------------------------
+Local Intf: Gi1/0/9
+Chassis id: 0000.5e00.5302
+Port id: 0000.5e00.5302
+Port Description: eth0
+System Name: 00:00:5e:00:53:02
+
+System Description:
+ArubaOS (MODEL: MODEL2), Version fw2 (50009)
+
+Time remaining: 110 seconds
+System Capabilities: B,W
+Enabled Capabilities: W
+Management Addresses:
+    IP: 192.0.2.9
+Auto Negotiation - supported, enabled
+Physical media capabilities:
+    1000baseT(FD)
+    100base-TX(FD)
+    100base-TX(HD)
+    10base-T(FD)
+    10base-T(HD)
+Media Attachment Unit type: 30
+Vlan ID: - not advertised
+PoE+ Power-via-MDI TLV:
+ Power Pair: Signal
+ Power Class: Class 4
+ Power Device Type: Type 2 PD
+ Power Source: PSE
+ Power Priority: unknown
+ Power Requested: 19000 mW
+ Power Allocated: 19000 mW
+
+
+Total entries displayed: 3
+

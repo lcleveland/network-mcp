@@ -1,0 +1,12 @@
+NAME: "MODEL2 chassis", DESCR: "MODEL2 chassis"
+PID:                   , VID: 0xFF, SN: SERIAL1
+
+NAME: "One port Fastethernet TX", DESCR: "One port Fastethernet TX"
+PID: MODEL1        , VID: 1.0, SN: SERIAL2
+
+NAME: "One port Fastethernet TX", DESCR: "One port Fastethernet TX"
+PID: MODEL1        , VID: 1.0, SN: SERIAL2
+
+NAME: "One port Fastethernet TX", DESCR: "One port Fastethernet TX"
+PID: MODEL1        , VID: 1.0, SN: SERIAL2
+

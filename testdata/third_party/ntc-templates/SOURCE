@@ -1,0 +1,17 @@
+https://github.com/networktocode/ntc-templates
+commit d4f30da6077dfb3e41cb6ff7ece5f5b768f59457
+
+cisco_ios_show_version.raw                   tests/cisco_ios/show_version/cisco_ios_show_version.raw (sanitized, see NOTICE)
+cisco_ios_show_cdp_neighbors_detail2.raw     tests/cisco_ios/show_cdp_neighbors_detail/cisco_ios_show_cdp_neighbors_detail2.raw (sanitized, see NOTICE)
+cisco_ios_show_interfaces2.raw               tests/cisco_ios/show_interfaces/cisco_ios_show_interfaces2.raw (sanitized, see NOTICE)
+cisco_ios_show_inventory.raw                 tests/cisco_ios/show_inventory/cisco_ios_show_inventory.raw (sanitized, see NOTICE)
+cisco_ios_show_ip_arp.raw                    tests/cisco_ios/show_ip_arp/cisco_ios_show_ip_arp.raw (sanitized, see NOTICE)
+cisco_ios_show_ip_bgp_summary.raw            tests/cisco_ios/show_ip_bgp_summary/cisco_ios_show_ip_bgp_summary.raw (sanitized, see NOTICE)
+cisco_ios_show_ip_interface3.raw             tests/cisco_ios/show_ip_interface/cisco_ios_show_ip_interface3.raw (sanitized, see NOTICE)
+cisco_ios_show_ip_route1.raw                 tests/cisco_ios/show_ip_route/cisco_ios_show_ip_route1.raw (sanitized, see NOTICE)
+cisco_ios_show_lldp_neighbors_detail1.raw    tests/cisco_ios/show_lldp_neighbors_detail/cisco_ios_show_lldp_neighbors_detail1.raw (sanitized, see NOTICE)
+cisco_ios_show_mac-address-table.raw         tests/cisco_ios/show_mac-address-table/cisco_ios_show_mac-address-table.raw (sanitized, see NOTICE)
+cisco_nxos_show_cdp_neighbors_detail2.raw    tests/cisco_nxos/show_cdp_neighbors_detail/cisco_nxos_show_cdp_neighbors_detail2.raw (sanitized, see NOTICE)
+cisco_nxos_show_ip_route_vrf2.raw            tests/cisco_nxos/show_ip_route/cisco_nxos_show_ip_route_vrf2.raw (sanitized, see NOTICE)
+LICENSE                                      LICENSE (verbatim)
+LICENSE.Apache-2.0                           https://www.apache.org/licenses/LICENSE-2.0.txt (verbatim)

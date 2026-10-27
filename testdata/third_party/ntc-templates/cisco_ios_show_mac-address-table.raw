@@ -1,0 +1,17 @@
+Dynamic Addresses Count:               9
+Secure Addresses (User-defined) Count: 0
+Static Addresses (User-defined) Count: 0
+System Self Addresses Count:           41
+Total MAC addresses:                   50
+Non-static Address Table:
+Destination Address  Address Type  VLAN  Destination Port
+-------------------  ------------  ----  --------------------
+0000.5e00.5300       Dynamic          1  FastEthernet0/1
+0000.5e00.5301       Dynamic          2  FastEthernet0/5
+0000.5e00.5302       Dynamic          2  FastEthernet0/5
+0000.5e00.5303       Dynamic          1  FastEthernet0/1
+0000.5e00.5304       Dynamic          1  FastEthernet0/1
+0000.5e00.5305       Dynamic          1  FastEthernet0/1
+0000.5e00.5306       Dynamic          1  FastEthernet0/1
+0000.5e00.5307       Dynamic          1  FastEthernet0/1
+0000.5e00.5308       Dynamic          1  FastEthernet0/1

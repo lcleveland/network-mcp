@@ -1,0 +1,19 @@
+network-mcp
+Copyright (c) 2026 Lyle Cleveland. Licensed under the MIT License (see LICENSE).
+
+The secret-redaction patterns in internal/output are adapted from:
+
+- Oxidized (https://github.com/ytti/oxidized), lib/oxidized/model/ios.rb and
+  nxos.rb, cmd :secret. Licensed under the Apache License, Version 2.0.
+- NAPALM (https://github.com/napalm-automation/napalm),
+  napalm/base/constants.py, CISCO_SANITIZE_FILTERS. Licensed under the
+  Apache License, Version 2.0.
+
+A copy of the Apache License, Version 2.0, is at
+https://www.apache.org/licenses/LICENSE-2.0
+
+The MIB modules in internal/mib/mibs are copied unchanged from net-snmp
+5.9.5.2 (https://www.net-snmp.org/, as packaged by nixpkgs in
+share/snmp/mibs), leaving out its NET-SNMP-* and UCD-* modules. They are the
+IETF and IANA MIB modules from the RFCs and IANA registries and keep their own
+copyright notices. net-snmp's COPYING is at internal/mib/mibs/COPYING.

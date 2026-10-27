@@ -1,0 +1,50 @@
+
+Capability codes:
+  (R) Router, (B) Bridge, (T) Telephone, (C) DOCSIS Cable Device
+  (W) WLAN Access Point, (P) Repeater, (S) Station, (O) Other
+Device ID            Local Intf      Hold-time  Capability  Port ID
+
+Chassis id: 0000.5e00.5300
+Port id: Fa1/0/9
+Local Port id: mgmt0
+Port Description: FastEthernet1/0/9
+System Name: name1.example.com
+System Description: Cisco IOS Software, MODEL1 Software (fw2), Version fw1, RELEASE SOFTWARE (fc2)
+Copyright (c) 1986-2008 by Cisco Systems, Inc.
+Time remaining: 92 seconds
+System Capabilities: B, R
+Enabled Capabilities: B, R
+Management Address: 192.0.2.1
+Vlan ID: 100
+
+
+Chassis id: 0000.5e00.5301
+Port id: Ethernet1/1
+Local Port id: Eth1/1
+Port Description: Ethernet1/1
+System Name: name2.example.com
+System Description: Cisco Nexus Operating System (NX-OS) Software fw3
+TAC support: http://name3.example.com/tac
+Copyright (c) 2002-2016, Cisco Systems, Inc. All rights reserved.
+Time remaining: 103 seconds
+System Capabilities: B, R
+Enabled Capabilities: B, R
+Management Address: 192.0.2.2
+Vlan ID: 1
+
+
+Chassis id: 0000.5e00.5302
+Port id: Ethernet1/2
+Local Port id: Eth1/2
+Port Description: Ethernet1/2
+System Name: name2.example.com
+System Description: Cisco Nexus Operating System (NX-OS) Software fw3
+TAC support: http://name3.example.com/tac
+Copyright (c) 2002-2016, Cisco Systems, Inc. All rights reserved.
+Time remaining: 103 seconds
+System Capabilities: B, R
+Enabled Capabilities: B, R
+Management Address: 192.0.2.2
+Vlan ID: 1
+
+Total entries displayed: 3
