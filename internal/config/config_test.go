@@ -239,6 +239,18 @@ func TestAllowConfig(t *testing.T) {
 			t.Errorf("mode %v: %v", mode, err)
 		}
 	}
+	// systemd LoadCredential files are 0440; group read is fine only in $CREDENTIALS_DIRECTORY
+	systemd := func(k string) string { return map[string]string{"CREDENTIALS_DIRECTORY": dir}[k] }
+	os.Chmod(ref, 0o440)
+	if _, err := Parse(append(base, "--allow-config"), systemd); err != nil {
+		t.Errorf("0440 under systemd: %v", err)
+	}
+	for _, mode := range []os.FileMode{0o460, 0o404} {
+		os.Chmod(ref, mode)
+		if _, err := Parse(append(base, "--allow-config"), systemd); err == nil {
+			t.Errorf("mode %v under systemd: accepted", mode)
+		}
+	}
 	os.Chmod(ref, 0o400)
 	c, err = Parse(append(base, "--allow-config", "--max-pending-changes", "3"), noenv)
 	if err != nil || !c.Enabled("change") || c.MaxPendingChanges != 3 {

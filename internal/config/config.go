@@ -246,12 +246,14 @@ func Parse(args []string, getenv func(string) string) (*Config, error) {
 	if c.AllowAdhoc && len(c.File.AdhocPrefixes) == 0 {
 		return nil, errors.New("--allow-adhoc needs adhoc_prefixes in the config file or prefixes_ref")
 	}
+	// the service's private credential dir, where systemd sets every file 0440
+	systemd := c.CredentialsDir == getenv("CREDENTIALS_DIRECTORY")
 	if c.AllowConfig { // only existence and mode: the secret is read fresh per call
 		for _, r := range c.File.Rules {
 			if r.WriteRef == "" {
 				continue
 			}
-			if err := creds.Private(c.CredentialsDir, r.WriteRef); err != nil {
+			if err := creds.Private(c.CredentialsDir, r.WriteRef, systemd); err != nil {
 				return nil, fmt.Errorf("--allow-config: %w", err)
 			}
 		}
@@ -259,7 +261,7 @@ func Parse(args []string, getenv func(string) string) (*Config, error) {
 	if c.Enabled("export") { // only existence and mode: refs are read fresh per export
 		for n, d := range c.File.Destinations {
 			if d.Credential != "" {
-				if err := creds.Private(c.CredentialsDir, d.Credential); err != nil {
+				if err := creds.Private(c.CredentialsDir, d.Credential, systemd); err != nil {
 					return nil, fmt.Errorf("destination %s: %w", n, err)
 				}
 			}

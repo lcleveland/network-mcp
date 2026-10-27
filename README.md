@@ -79,7 +79,7 @@ Results are JSON built by the server. Device text appears only in the fields lis
 | `--tool-groups` | | all (`cli`, `snmp`, `export`, `change`; `core` is always on; `snmp` is dropped when no rule sets `snmp`) |
 | `--mib-dir` (repeatable) | | none; extra MIB modules, a parse error refuses startup |
 | `--allow-adhoc` | | off; needs `adhoc_prefixes` |
-| `--allow-config` | | off; registers `network_change` and refuses startup unless every rule's `write_ref` file exists with no group or world access |
+| `--allow-config` | | off; registers `network_change` and refuses startup unless every rule's `write_ref` file exists with no group or world access (group read is allowed in `$CREDENTIALS_DIRECTORY`, where systemd makes every file 0440) |
 | `--max-pending-changes` | | 1; applied but unconfirmed changes at once, across devices |
 | `--allow-save` | | off; adds `network_change` `save`; needs `--allow-config` |
 | `--request-timeout`, `--log-level` | `NETWORK_MCP_LOG_LEVEL` | `30s`, `info` |
