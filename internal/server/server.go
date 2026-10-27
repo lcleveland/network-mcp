@@ -11,7 +11,7 @@ import (
 	"github.com/lcleveland/network-mcp/internal/version"
 )
 
-const instructions = "Tools for reading network devices over SSH. The server connects only to inventory devices inside its " +
+const instructions = "Tools for reading network devices over SSH and SNMP. The server connects only to inventory devices inside its " +
 	"management prefixes, with pinned host keys, and runs only read commands that pass its gate.\n\n" +
 	"Call network_status first if anything fails: it separates an address outside the management prefixes from an " +
 	"unreachable port, a wrong host key and a rejected credential.\n\n" +

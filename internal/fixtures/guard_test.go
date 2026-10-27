@@ -32,13 +32,36 @@ func TestFixturesAreSanitized(t *testing.T) {
 		if err != nil {
 			return err
 		}
-		for _, v := range Violations(string(b)) {
+		text := string(b)
+		if strings.HasSuffix(p, ".snmprec") {
+			text = Snmprec(text)
+		}
+		for _, v := range Violations(text) {
 			t.Errorf("%s: %s (run cmd/sanitize)", p, v)
 		}
 		return nil
 	})
 	if err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestSnmprec(t *testing.T) {
+	clean := "# walk\n1.3.6.1.2.1.1.2.0|6|1.3.6.1.4.1.9.1.1\n1.3.6.1.2.1.2.2.1.6.1|4x|00005e005301\n1.3.6.1.2.1.4.20.1.1.192.0.2.1|64|192.0.2.1\n"
+	if v := Violations(Snmprec(clean)); len(v) != 0 {
+		t.Errorf("clean: %v", v)
+	}
+	for _, dirty := range []string{
+		"1.3.6.1.2.1.2.2.1.6.1|4x|3c22fb010203",
+		"1.3.6.1.2.1.4.20.1.1.1|64|10.1.2.3",
+		"1.3.6.1.2.1.4.20.1.1.1|64x|0a010203",
+		"1.3.6.1.2.1.1.5.0|4|core1.corp.acme.com",
+		"1.3.6.1.2.1.1.5.0|4x|636f7265312e636f72702e61636d652e636f6d",
+		"# from 192.168.1.20",
+	} {
+		if v := Violations(Snmprec(dirty)); len(v) == 0 {
+			t.Errorf("%q passed the guard", dirty)
+		}
 	}
 }
 

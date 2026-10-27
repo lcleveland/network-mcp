@@ -39,6 +39,10 @@ func Register(s *mcp.Server, d Deps) int {
 		registerConfig(s, d)
 		n += 2
 	}
+	if d.Config.Enabled("snmp") {
+		registerSNMP(s, d)
+		n++
+	}
 	return n
 }
 

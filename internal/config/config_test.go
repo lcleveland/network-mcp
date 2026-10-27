@@ -54,6 +54,44 @@ func TestParse(t *testing.T) {
 	}
 }
 
+func TestSNMPRules(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+	for name, body := range map[string]string{
+		"v2":         `{"community":"fake-community"}`,
+		"v3":         `{"username":"mcp","auth_protocol":"SHA","auth_password":"fake-auth","priv_protocol":"AES","priv_password":"fake-priv"}`,
+		"noauth":     `{"username":"mcp"}`,
+		"authnopriv": `{"username":"mcp","auth_protocol":"SHA","auth_password":"fake-auth"}`,
+	} {
+		os.WriteFile(filepath.Join(dir, name), []byte(body), 0o400)
+	}
+	parse := func(rule string) (*Config, error) {
+		os.WriteFile(path, []byte("management_prefixes: [192.0.2.0/24]\nrules: ["+rule+"]\n"), 0o600)
+		return Parse([]string{"--config", path, "--credentials-dir", dir, "--mib-dir", "/a", "--mib-dir", "/b"}, func(string) string { return "" })
+	}
+
+	c, err := parse("{match: default, read_ref: ssh-read}")
+	if err != nil || c.Enabled("snmp") || !c.Enabled("cli") || strings.Join(c.MIBDirs, ",") != "/a,/b" {
+		t.Fatalf("no snmp rule must strip the snmp group: %v %v", c, err)
+	}
+	for _, ok := range []string{"{match: default, snmp: {version: v2c, ref: v2}}", "{match: {tag: core}, snmp: {version: v3, ref: v3, port: 1161}}"} {
+		if c, err := parse(ok); err != nil || !c.Enabled("snmp") {
+			t.Errorf("%s: %v", ok, err)
+		}
+	}
+	for rule, want := range map[string]string{
+		"{match: default, snmp: {version: v1, ref: v2}}":               "v1 is refused",
+		"{match: default, snmp: {version: v3, ref: noauth}}":           "noAuth",
+		"{match: default, snmp: {version: v3, ref: authnopriv}}":       "authNoPriv",
+		"{match: default, snmp: {version: v2c, ref: missing}}":         "missing",
+		"{match: default, snmp: {version: v2c, ref: v2, port: 70000}}": "snmp.port",
+	} {
+		if _, err := parse(rule); err == nil || !strings.Contains(err.Error(), want) || strings.Contains(err.Error(), "fake-") {
+			t.Errorf("%s: %v, want %q", rule, err, want)
+		}
+	}
+}
+
 func TestHTTP(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.yaml")

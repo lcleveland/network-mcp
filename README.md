@@ -1,6 +1,6 @@
 # network-mcp
 
-An MCP server, written in Go, that reads network devices over SSH. It is general-purpose: any SSH device works through the generic driver, and IOS-XE and NX-OS have first-class drivers. SNMP, config export and gated writes come in later releases. It serves stdio or streamable HTTP and is packaged as a Nix flake with a NixOS module.
+An MCP server, written in Go, that reads network devices over SSH and SNMP. It is general-purpose: any SSH device works through the generic driver, IOS-XE and NX-OS have first-class drivers, and any SNMP v2c or v3 agent can be read. Config export and gated writes come in later releases. It serves stdio or streamable HTTP and is packaged as a Nix flake with a NixOS module.
 
 The server is read-only. Before anything reaches a device, it checks four things:
 - the device is in the inventory and opted in;
@@ -12,11 +12,14 @@ The server is read-only. Before anything reaches a device, it checks four things
 
 | Group | Tool | What it does |
 |---|---|---|
-| core (always on) | `network_status` | Without `device`: version, enabled groups, inventory source health. With `device`: each connect check in order (prefix gate, TCP, host key, auth, prompt). Runs no CLI command. |
+| core (always on) | `network_status` | Without `device`: version, enabled groups, inventory source health. With `device`: each connect check in order (prefix gate, TCP, host key, auth, prompt), then an SNMP `sysUpTime.0` read if the device has SNMP. Runs no CLI command. |
 | cli | `network_show` | `device` and exactly one of `getter` or `command`; filters `include`, `exclude`, `section`. Raw text, or JSON in `data` on NX-OS. |
 | cli | `network_config` | `action: get`, `device`, `source: running\|startup`; the same filters. Always redacted. |
+| snmp | `network_snmp` | `get` (`device`, up to 16 `oids`), `walk` / `bulkwalk` (`device`, root `oid`, `after`, `max_rows` 500/max 5000), `resolve` (`oids`, name ↔ OID offline). Rows `{oid, name, type, value}`. |
 
 **Config reads.** `network_config` sends a command the server picks, never user text, so it skips the read gate's deny list (which blocks config dumps in `network_show`). IOS, IOS-XE and NX-OS use `show running-config` and `show startup-config`; any other platform needs `platforms.<value>.config.running` / `.startup`, which must stay inside the read gate's character set, and is refused until set. Redaction patterns are Cisco-shaped; elsewhere only the catch-all (`password`, `secret`, `key`, `community`, `psk`, `passphrase`) is likely to match, so give the server a read-only device account.
+
+**SNMP.** Only v2c and v3 authPriv, with version and credentials from the device's `snmp` rule (`{version, ref, port?}`, port 161 by default), never from arguments. v1, noAuth and authNoPriv refuse startup; a device with no `snmp` rule is refused. The SNMP address passes the same prefix gate as SSH. The server never sends a SET and listens for no traps. Walks stop at the end of the subtree, `endOfMibView`, `max_rows` or about 60 KiB, and `_truncation.hint` then says `use after: <oid>`; an agent whose OIDs do not increase ends the walk with an error. The community and USM subtrees (`1.3.6.1.6.3.18`, `1.3.6.1.6.3.15`) are refused on request and withheld from answers. Printable octet strings come back as sanitized text, others as `0x` hex, missing objects as `null` with a warning. Names resolve offline through gosmi over net-snmp's IETF/IANA MIBs, built in; `--mib-dir` adds vendor MIBs, and numeric OIDs always work.
 
 **Platforms.** The device's `platform` value picks the driver and getter profile, ignoring case:
 
@@ -46,7 +49,8 @@ Results are JSON built by the server. Device text appears only in the fields lis
 | `--config` | `NETWORK_MCP_CONFIG` | required |
 | `--credentials-dir` | `CREDENTIALS_DIRECTORY` | required |
 | `--known-hosts` | `NETWORK_MCP_KNOWN_HOSTS` | required if any device uses SSH |
-| `--tool-groups` | | all (`cli`; `core` is always on) |
+| `--tool-groups` | | all (`cli`, `snmp`; `core` is always on; `snmp` is dropped when no rule sets `snmp`) |
+| `--mib-dir` (repeatable) | | none; extra MIB modules, a parse error refuses startup |
 | `--allow-adhoc` | | off; needs `adhoc_prefixes` |
 | `--request-timeout`, `--log-level` | `NETWORK_MCP_LOG_LEVEL` | `30s`, `info` |
 | `--stdio` / `--http` | | stdio |
@@ -100,7 +104,7 @@ The device file is a list. Names are unique and case-insensitive, and every devi
 
 **Ad-hoc addresses.** With `--allow-adhoc`, a `device` that is an IP literal no source knows is accepted if it is inside `adhoc_prefixes`: `generic_ssh`, credentials from the `adhoc` rule only, host key still pinned. Without the flag it is refused.
 
-**Credential refs.** A ref is the file `$CREDENTIALS_DIRECTORY/<ref>`. It holds JSON, either `{"username": …, "password": …}` or `{"username": …, "private_key": …}`. The server reads it on every connect and never caches or logs it. No secret is ever taken from a flag or an environment variable.
+**Credential refs.** A ref is the file `$CREDENTIALS_DIRECTORY/<ref>`. It holds JSON, either `{"username": …, "password": …}` or `{"username": …, "private_key": …}`; an SNMP ref holds `{"community": …}` for v2c or `{"username", "auth_protocol", "auth_password", "priv_protocol", "priv_password"}` for v3 (auth `MD5`, `SHA`, `SHA224`–`SHA512`; priv `DES`, `AES`, `AES192`, `AES256`, `AES192C`, `AES256C`). The server reads it on every connect and never caches or logs it. No secret is ever taken from a flag or an environment variable.
 
 **Host keys.** The server dials the resolved IP address, so pin each device's key in the `--known-hosts` file under its IP (`[ip]:port` for a port other than 22).
 
@@ -141,7 +145,8 @@ The module:
 - renders `settings` to the `--config` file (or takes `configFile`); it holds structure and ref names only;
 - passes each credential and the bearer token through systemd `LoadCredential`, so no secret reaches the Nix store, argv or the environment, and refuses paths inside the store;
 - serves streamable HTTP on `127.0.0.1:8232` as a hardened DynamicUser, and refuses a non-loopback `listenAddress` without `bearerTokenFile`;
-- refuses empty `settings.management_prefixes`.
+- refuses empty `settings.management_prefixes`;
+- passes each of `mibDirs` as `--mib-dir`.
 
 `overlays.default` adds `pkgs.network-mcp`. To install only the CLI for stdio use on a workstation, set `services.network-mcp.installCli = true;` and leave `enable` off.
 
@@ -172,7 +177,7 @@ claude mcp add --transport http network http://127.0.0.1:8232/mcp \
 
 `nix develop` gives you Go, gopls, govulncheck and nixfmt. `nix flake check` builds the package and runs every test (the fixture guard included), the module evaluation checks and the VM test. `nix fmt` formats the Nix files.
 
-The tests are hermetic: an in-process SSH server (`internal/sshfake`) replays fixture output on loopback. There is no vendor image and no lab. The VM test (`nix build .#checks.x86_64-linux.vm-network -L`, under a minute with KVM) runs the module against a real OpenSSH server whose login shell is `cmd/fakecli`, a test-only build of the same fake that is never shipped.
+The tests are hermetic: an in-process SSH server (`internal/sshfake`) replays fixture output on loopback, and an in-process SNMP v2c agent (`internal/snmpfake`) answers from the hand-made `.snmprec` files in `testdata/snmp`. There is no vendor image and no lab. The VM test (`nix build .#checks.x86_64-linux.vm-network -L`, under a minute with KVM) runs the module against a real OpenSSH server whose login shell is `cmd/fakecli`, a test-only build of the same fake that is never shipped.
 
 ## Public repo rule
 
@@ -180,7 +185,7 @@ This repository is public. Fixtures, docs and issues must never contain real hos
 - documentation values: RFC 5737 / 3849 / 7042 addresses, RFC 2606 names;
 - `dev1`-style hostnames.
 
-`TestFixturesAreSanitized` scans every file under `testdata/` and fails on anything else, and it runs in `nix flake check`.
+`TestFixturesAreSanitized` scans every file under `testdata/` and fails on anything else, and it runs in `nix flake check`. In `.snmprec` files it scans comments and values (hex decoded), not OIDs, so an address inside an OID index must be checked by hand. LibreNMS walks are GPL-3.0: use them for shape only.
 
 ## Fixtures
 
@@ -193,4 +198,4 @@ Third-party fixtures go under `testdata/third_party/<source>/` with the upstream
 
 ## Licence
 
-MIT.
+MIT. The embedded MIB modules in `internal/mib/mibs` keep their own IETF/IANA notices; see `NOTICE`.

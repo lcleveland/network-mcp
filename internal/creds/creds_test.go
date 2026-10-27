@@ -39,6 +39,39 @@ func TestRead(t *testing.T) {
 	}
 }
 
+func TestReadSNMP(t *testing.T) {
+	dir := t.TempDir()
+	for name, body := range map[string]string{
+		"v2":         `{"community":"fake-community"}`,
+		"v3":         `{"username":"mcp","auth_protocol":"sha256","auth_password":"fake-auth-pass","priv_protocol":"AES","priv_password":"fake-priv-pass"}`,
+		"noauth":     `{"username":"mcp"}`,
+		"authnopriv": `{"username":"mcp","auth_protocol":"SHA","auth_password":"fake-auth-pass"}`,
+		"badproto":   `{"username":"mcp","auth_protocol":"ROT13","auth_password":"fake-auth-pass","priv_protocol":"AES","priv_password":"fake-priv-pass"}`,
+		"empty":      `{}`,
+	} {
+		os.WriteFile(filepath.Join(dir, name), []byte(body), 0o400)
+	}
+	if c, err := ReadSNMP(dir, "v2", "v2c"); err != nil || c.Community != "fake-community" {
+		t.Fatalf("v2c: %v", err)
+	}
+	c, err := ReadSNMP(dir, "v3", "v3")
+	if err != nil || c.PrivPassword != "fake-priv-pass" {
+		t.Fatalf("v3: %v", err)
+	}
+	if s := fmt.Sprintf("%v %+v %#v %s", c, c, c, c); strings.Contains(s, "fake-") {
+		t.Errorf("formatting leaks a secret: %s", s)
+	}
+	for _, tc := range [][3]string{
+		{"noauth", "v3", "noAuth"}, {"authnopriv", "v3", "authNoPriv"}, {"badproto", "v3", "auth_protocol"},
+		{"empty", "v2c", "community"}, {"v2", "v1", "refused"}, {"missing", "v2c", "missing"},
+	} {
+		_, err := ReadSNMP(dir, tc[0], tc[1])
+		if err == nil || !strings.Contains(err.Error(), tc[2]) || strings.Contains(err.Error(), "fake-") {
+			t.Errorf("%v: %v", tc, err)
+		}
+	}
+}
+
 func TestToken(t *testing.T) {
 	dir := t.TempDir()
 	os.WriteFile(filepath.Join(dir, "nb"), []byte(`{"token":"tok-secret"}`), 0o400)

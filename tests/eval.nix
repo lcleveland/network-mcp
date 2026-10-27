@@ -76,7 +76,8 @@ in
     check "--addr 127.0.0.1:8232" cmd
     check "--path /mcp" cmd
     check "--config /nix/store/" cmd
-    check "--tool-groups core,cli" cmd
+    check "--tool-groups core,cli,snmp" cmd
+    refute "--mib-dir" cmd
     refute "--known-hosts" cmd
     refute "--allow-adhoc" cmd
     refute "http-auth-token" creds
@@ -96,6 +97,10 @@ in
         toolGroups = [ "core" ];
         requestTimeout = "10s";
         allowAdhoc = true;
+        mibDirs = [
+          "/etc/network-mcp/mibs"
+          "/var/lib/vendor mibs"
+        ];
         logLevel = "debug";
         extraArgs = [ "--stdio=false" ];
         settings = {
@@ -109,6 +114,7 @@ in
         check "--tool-groups core " cmd
         check "--request-timeout 10s" cmd
         check "--allow-adhoc" cmd
+        check "--mib-dir /etc/network-mcp/mibs --mib-dir '/var/lib/vendor mibs'" cmd
         check "--log-level debug" cmd
         check "--stdio=false" cmd
         check "http-auth-token:/run/secrets/bearer" creds

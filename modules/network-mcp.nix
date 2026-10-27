@@ -19,6 +19,7 @@ let
   groups = [
     "core"
     "cli"
+    "snmp"
   ];
   isLoopback = a: a == "::1" || a == "localhost" || lib.hasPrefix "127." a;
   inStore = p: p != null && lib.hasPrefix builtins.storeDir p;
@@ -49,6 +50,10 @@ let
     cfg.logLevel
   ]
   ++ optional cfg.allowAdhoc "--allow-adhoc"
+  ++ lib.concatMap (d: [
+    "--mib-dir"
+    d
+  ]) cfg.mibDirs
   ++ optionals (cfg.knownHostsFile != null) [
     "--known-hosts"
     cfg.knownHostsFile
@@ -118,6 +123,17 @@ in
       description = ''
         Accept an IP literal inside `settings.adhoc_prefixes` as a device
         (generic read-only driver, credentials from the `adhoc` rule).
+      '';
+    };
+
+    mibDirs = mkOption {
+      type = types.listOf types.str;
+      default = [ ];
+      example = [ "/etc/network-mcp/mibs" ];
+      description = ''
+        Directories of extra MIB modules (for example vendor MIBs), each passed
+        as `--mib-dir` and loaded at startup on top of the built-in IETF/IANA
+        set. A module that fails to parse refuses startup.
       '';
     };
 
