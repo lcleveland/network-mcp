@@ -151,6 +151,11 @@ func TestParseFile(t *testing.T) {
 		"management_prefixes: [192.0.2.0/24]\nsources: [{name: a, type: netbox, url: 'https://x'}]":                                                           "token_ref",
 		"management_prefixes: [192.0.2.0/24]\nsources: [{name: a, type: netbox, url: 'https://x', token_ref: t}]":                                             "opt_in_tag",
 		"management_prefixes: [192.0.2.0/24]\nsources: [{name: a, type: netbox, url: 'https://x', token_ref: t, opt_in_tag: m, address_order: [primary_ip]}]": "address_order",
+		"management_prefixes: [192.0.2.0/24]\nsources: [{name: a, type: file, path: x, management_prefixes: {tag: m}}]":                                       "path and nothing else",
+		"sources: [{name: a, type: netbox, url: 'https://x', token_ref: t, opt_in_tag: m, management_prefixes: {}}]":                                          "exactly one of tag or role",
+		"sources: [{name: a, type: netbox, url: 'https://x', token_ref: t, opt_in_tag: m, management_prefixes: {tag: a, role: b}}]":                           "exactly one of tag or role",
+		"sources: [{name: a, type: netbox, url: 'https://x', token_ref: t, opt_in_tag: m, management_prefixes: {tags: a}}]":                                   "tags",
+		"sources: [{name: a, type: netbox, url: 'https://x', token_ref: t, opt_in_tag: m, management_prefixes: {tag: a}}, {name: b, type: netbox, url: 'https://y', token_ref: t, opt_in_tag: m, management_prefixes: {role: r}}]": "one source only",
 		"management_prefixes: [192.0.2.0/24]\nplatforms: {c9k: {driver: iosxr}}":                                                                              "driver",
 		"management_prefixes: [192.0.2.0/24]\nplatforms: {c9k: {profile: junos}}":                                                                             "profile",
 		"management_prefixes: [192.0.2.0/24]\nplatforms: {c9k: {drvier: iosxe}}":                                                                              "drvier",
@@ -179,6 +184,11 @@ func TestParseFile(t *testing.T) {
 		if _, err := ParseFile([]byte(in)); err == nil || !strings.Contains(err.Error(), want) {
 			t.Errorf("%q: %v, want %q", in, err, want)
 		}
+	}
+	// NetBox supplies the management prefixes, so the file may have none (no fallback)
+	f, err := ParseFile([]byte("sources: [{name: nb, type: netbox, url: 'https://x', token_ref: t, opt_in_tag: m, management_prefixes: {role: management}}]\n"))
+	if err != nil || f.PrefixSource() == nil || f.PrefixSource().ManagementPrefixes.Role != "management" {
+		t.Fatalf("%+v %v", f, err)
 	}
 }
 

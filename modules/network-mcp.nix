@@ -103,6 +103,12 @@ in
         `{"management_prefixes": [...], "adhoc_prefixes": [...]}`
         (`adhoc_prefixes` optional).
 
+        Or let a NetBox source supply them: `management_prefixes = { tag =
+        "..."; }` (or `role`) on that source reads the matching IPAM prefixes
+        at startup. Any file list is then only the fallback for an
+        unreachable NetBox, and NetBox write access decides where the server
+        may connect.
+
         Export destination paths (`dir`, and `git`'s local repo) must live
         under `/var/lib/network-mcp/` (the unit's `StateDirectory`); the
         hardened unit can write nowhere else. A `git` or `s3` destination's
@@ -287,8 +293,9 @@ in
           assertion =
             cfg.configFile != null
             || (cfg.settings.management_prefixes or [ ]) != [ ]
-            || cfg.settings ? prefixes_ref;
-          message = "services.network-mcp.settings.management_prefixes is empty and prefixes_ref is unset; the server connects only to devices inside them.";
+            || cfg.settings ? prefixes_ref
+            || lib.any (s: s ? management_prefixes) (cfg.settings.sources or [ ]);
+          message = "services.network-mcp.settings.management_prefixes is empty, prefixes_ref is unset and no NetBox source sets management_prefixes; the server connects only to devices inside them.";
         }
         {
           assertion =
