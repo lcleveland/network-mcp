@@ -236,7 +236,8 @@ func registerChange(s *mcp.Server, d Deps) {
 			"Reverts now and checks pre_hash (server-reverted: then deletes the checkpoint or snapshot).\n\n" + save +
 			"archive: device, reason. Only for IOS-XE on a platform that sets archive_path: configures archive / path " +
 			"<archive_path> so apply can use the device's revert timer. A one-off running-config change, audited, not " +
-			"reverted and not saved; already_configured if the device has an archive path. Plan after it, not before.\n\n" +
+			"reverted and not saved, but a later save may write it; already_configured if the device has an archive path. " +
+			"Plan after it, not before.\n\n" +
 			"status: this session's plans and pending changes; with change_id of a server-reverted change, also the other " +
 			"network-mcp-* checkpoints or snapshots on its device (stale_checkpoints). After a restart there are no change " +
 			"records; list leftovers with network_status and device.\n\n" + UntrustedNote,

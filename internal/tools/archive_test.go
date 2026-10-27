@@ -50,3 +50,38 @@ func TestArchiveAction(t *testing.T) {
 		t.Fatalf("second archive: %v", out)
 	}
 }
+
+func TestArchiveThenSave(t *testing.T) {
+	su := setup{allowConfig: true, allowSave: true, rules: []config.Rule{writeRule},
+		platforms: map[string]platform.Config{"cisco_iosxe": {ArchivePath: "flash:mcp-archive"}}}
+	save := map[string]any{"action": "save", "device": "dev1", "reason": "keep the archive block"}
+	arch := map[string]any{"action": "archive", "device": "dev1", "reason": "r"}
+
+	// already configured: nothing this server made, so nothing to save
+	e, _ := startChange(t, su)
+	if out, _ := e.call(t, "network_change", arch); out["outcome"] != "already_configured" {
+		t.Fatalf("archive: %v", out)
+	}
+	if _, errText := e.call(t, "network_change", save); !strings.Contains(errText, "no change confirmed") {
+		t.Fatalf("save after already_configured: %s", errText)
+	}
+
+	e, dev := startChange(t, su)
+	dev.Running = strings.Replace(dev.Running, "archive\n path flash:archive\n", "", 1)
+	if out, _ := e.call(t, "network_change", arch); out["outcome"] != "archive_configured" {
+		t.Fatalf("archive: %v", out)
+	}
+	out, errText := e.call(t, "network_change", save)
+	if errText != "" || out["outcome"] != "saved" || dev.Startup != dev.Config() || !strings.Contains(dev.Startup, "path flash:mcp-archive") {
+		t.Fatalf("save after archive: %v %s", out, errText)
+	}
+
+	// someone else's edit after archive is never saved
+	e, dev = startChange(t, su)
+	dev.Running = strings.Replace(dev.Running, "archive\n path flash:archive\n", "", 1)
+	e.call(t, "network_change", arch)
+	dev.Running += "vlan 99\n"
+	if _, errText := e.call(t, "network_change", save); !strings.Contains(errText, "differs from the last change") {
+		t.Fatalf("save after drift: %s", errText)
+	}
+}

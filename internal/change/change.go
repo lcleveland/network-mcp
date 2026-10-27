@@ -154,6 +154,14 @@ func (s *Store) End(c *Change, confirmed bool) {
 	}
 }
 
+// Record sets the post-hash save requires for a device, for a server-made
+// change that has no Change record (network_change archive).
+func (s *Store) Record(device, postHash string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.confirmed[device] = postHash
+}
+
 // Get returns a committed change of session; it may end before the caller locks it.
 func (s *Store) Get(id, session string) (*Change, error) {
 	for _, c := range s.Changes() {
