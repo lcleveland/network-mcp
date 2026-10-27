@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
+	"regexp"
 	"slices"
 	"strings"
 	"time"
@@ -23,6 +25,16 @@ import (
 )
 
 const maxReason = 512
+
+func checkReason(r string) error {
+	if strings.TrimSpace(r) == "" || len(r) > maxReason {
+		return fmt.Errorf("reason is required, at most %d bytes", maxReason)
+	}
+	return nil
+}
+
+// cleanReason is a reason as audited.
+func cleanReason(r string) string { return output.Cap(output.Sanitize(r), maxReason) }
 
 type ChangeInput struct {
 	Action        string   `json:"action" jsonschema:"plan, apply, confirm, rollback, save or status"`
@@ -77,10 +89,102 @@ type ChangeOutput struct {
 	Truncation  *output.Truncation `json:"_truncation,omitempty"`
 }
 
-func (d Deps) audit(e audit.Event) {
-	if err := d.Audit.Write(e); err != nil {
+// audit writes e best-effort: a failure is only logged.
+func (d Deps) audit(e audit.Event) { d.record(e) }
+
+// record writes e and logs a failure; a caller that must not go on without
+// the line checks the error.
+func (d Deps) record(e audit.Event) error {
+	err := d.Audit.Write(e)
+	if err != nil {
 		d.Log.Error("audit write failed", "err", err)
 	}
+	return err
+}
+
+// refuse audits a refusal and returns it, capped and redacted.
+func (d Deps) refuse(ev audit.Event, outcome string, err error) error {
+	msg, _ := output.Field(err.Error(), output.LongCap)
+	ev.Outcome, ev.Error = outcome, msg
+	d.audit(ev)
+	return errors.New(msg)
+}
+
+// begin writes the line that must exist before a write reaches the device.
+func (d Deps) begin(ev audit.Event) error {
+	ev.Outcome = "started"
+	if d.record(ev) != nil {
+		return errors.New("the audit log cannot be written, so the action is refused")
+	}
+	return nil
+}
+
+func redactLines(lines []string) ([]string, int) {
+	out, total := make([]string, len(lines)), 0
+	for i, l := range lines {
+		var n int
+		out[i], n = output.Redact(output.Sanitize(l))
+		total += n
+	}
+	return out, total
+}
+
+// timed gives every command on a session its own request timeout, so a
+// session kept open for confirm outlives the apply call.
+type timed struct {
+	*sshcli.Session
+	d time.Duration
+}
+
+func (t timed) Run(ctx context.Context, cmd string) (string, error) {
+	ctx, cancel := context.WithTimeout(ctx, t.d)
+	defer cancel()
+	return t.Session.Run(ctx, cmd)
+}
+
+func (t timed) Ask(ctx context.Context, cmd string, q *regexp.Regexp) (string, error) {
+	ctx, cancel := context.WithTimeout(ctx, t.d)
+	defer cancel()
+	return t.Session.Ask(ctx, cmd, q)
+}
+
+// target re-gates a plan's device and checks that its address and pinned
+// host key are still the ones the plan bound. Writes use the plan's ref.
+func (d Deps) target(ctx context.Context, p change.Plan) (*gated, error) {
+	g, err := d.gate(ctx, p.Device)
+	if err != nil {
+		return nil, err
+	}
+	hk, err := sshcli.HostKey(d.Config.KnownHosts, g.addr, g.dev.Port)
+	switch {
+	case err != nil:
+		return nil, err
+	case g.addr.String() != p.Address || hk != p.HostKey:
+		return nil, fmt.Errorf("the address or pinned host key of %s changed since the plan; plan again", p.Device)
+	}
+	g.ref = p.WriteRef
+	return g, nil
+}
+
+// dial opens a fresh session with g's write ref (as user, when set). The
+// prompt must be privileged: the server never runs enable.
+func (d Deps) dial(ctx context.Context, g *gated, user string) (timed, error) {
+	c, err := creds.Read(d.Config.CredentialsDir, g.ref)
+	if err != nil {
+		return timed{}, err
+	}
+	if user != "" && c.Username != user {
+		return timed{}, fmt.Errorf("the write_ref %s no longer holds the planned username", g.ref)
+	}
+	s, err := d.openAs(ctx, g, c)
+	if err != nil {
+		return timed{}, err
+	}
+	if !strings.HasSuffix(s.Prompt(), "#") {
+		s.Close()
+		return timed{}, errors.New("the write account's prompt is not privileged (#); the server never runs enable")
+	}
+	return timed{s, d.Config.RequestTimeout}, nil
 }
 
 func (d Deps) changeCount() *ChangeStatus {
@@ -128,7 +232,8 @@ func registerChange(s *mcp.Server, d Deps) {
 			"the revert (NX-OS: deletes the checkpoint). It does not save.\n\nrollback: change_id. Reverts now and checks " +
 			"pre_hash (NX-OS: then deletes the checkpoint).\n\n" + save +
 			"status: this session's plans and pending changes; with change_id of an NX-OS change, also the other " +
-			"network-mcp-* checkpoints on its device (stale_checkpoints).\n\n" + UntrustedNote,
+			"network-mcp-* checkpoints on its device (stale_checkpoints). After a restart there are no change records; list " +
+			"leftover network-mcp-* checkpoints with network_status and device.\n\n" + UntrustedNote,
 		InputSchema: in,
 		Annotations: &mcp.ToolAnnotations{DestructiveHint: new(true), OpenWorldHint: new(true)},
 	}, func(ctx context.Context, req *mcp.CallToolRequest, in ChangeInput) (*mcp.CallToolResult, ChangeOutput, error) {
@@ -198,54 +303,47 @@ func (d Deps) plan(ctx context.Context, sid, client string, in ChangeInput) (Cha
 	var out ChangeOutput
 	redacted, n := redactLines(in.Lines)
 	out.Redactions = n
-	ev := audit.Event{Event: "plan", MCPSession: sid, Client: client, Reason: output.Cap(output.Sanitize(in.Reason), maxReason),
+	ev := audit.Event{Event: "plan", MCPSession: sid, Client: client, Reason: cleanReason(in.Reason),
 		Device: in.Device, Commands: redacted}
-	refuse := func(outcome string, err error) (ChangeOutput, error) {
-		msg, _ := output.Field(err.Error(), output.LongCap)
-		ev.Outcome, ev.Error = outcome, msg
-		d.audit(ev)
-		return ChangeOutput{}, errors.New(msg)
-	}
-
 	if err := checkReason(in.Reason); err != nil {
-		return refuse("refused", err)
+		return ChangeOutput{}, d.refuse(ev, "refused", err)
 	}
 	list, err := deny.New(d.Config.File.WriteDeny)
 	if err != nil {
-		return refuse("refused", err)
+		return ChangeOutput{}, d.refuse(ev, "refused", err)
 	}
 	if _, err := list.Check(in.Lines, deny.Derived{}); err != nil { // before touching the device
-		return refuse("denied", err)
+		return ChangeOutput{}, d.refuse(ev, "denied", err)
 	}
 	g, err := d.gate(ctx, in.Device)
 	if err != nil {
-		return refuse("refused", err)
+		return ChangeOutput{}, d.refuse(ev, "refused", err)
 	}
 	ev.Device, ev.Address, ev.Platform, ev.CredRef = g.dev.Name, g.addr.String(), g.plat.Driver, g.dev.WriteRef
 	switch {
 	case g.dev.Adhoc:
-		return refuse("refused", errors.New("ad-hoc devices cannot be changed"))
-	case g.plat.Driver != platform.IOSXE && g.plat.Driver != platform.NXOS:
-		return refuse("refused", fmt.Errorf("%s uses the %s driver; only %s and %s devices can be changed", g.dev.Name, g.plat.Driver, platform.IOSXE, platform.NXOS))
+		return ChangeOutput{}, d.refuse(ev, "refused", errors.New("ad-hoc devices cannot be changed"))
+	case drivers[g.plat.Driver] == nil:
+		return ChangeOutput{}, d.refuse(ev, "refused", fmt.Errorf("%s uses the %s driver; only %s devices can be changed", g.dev.Name, g.plat.Driver, strings.Join(slices.Sorted(maps.Keys(drivers)), " and ")))
 	case g.dev.WriteRef == "":
-		return refuse("refused", fmt.Errorf("no rule gives %s a write_ref, so it cannot be changed (the read_ref is never used)", g.dev.Name))
+		return ChangeOutput{}, d.refuse(ev, "refused", fmt.Errorf("no rule gives %s a write_ref, so it cannot be changed (the read_ref is never used)", g.dev.Name))
 	}
 	c, err := creds.Read(d.Config.CredentialsDir, g.dev.WriteRef)
 	if err != nil {
-		return refuse("refused", err)
+		return ChangeOutput{}, d.refuse(ev, "refused", err)
 	}
 	ev.Username = c.Username
 	if ev.HostKey, err = sshcli.HostKey(d.Config.KnownHosts, g.addr, g.dev.Port); err != nil {
-		return refuse("refused", err)
+		return ChangeOutput{}, d.refuse(ev, "refused", err)
 	}
 	g.ref = g.dev.WriteRef
 	raw, err := d.fetch(ctx, g, g.plat.Config.Running)
 	if err != nil {
-		return refuse("refused", fmt.Errorf("reading the running config: %w", err))
+		return ChangeOutput{}, d.refuse(ev, "refused", fmt.Errorf("reading the running config: %w", err))
 	}
 	lines, err := list.Check(in.Lines, deny.Derive(raw, g.addr))
 	if err != nil {
-		return refuse("denied", err)
+		return ChangeOutput{}, d.refuse(ev, "denied", err)
 	}
 	ev.PreHash = hash.Sum(raw)
 
@@ -254,18 +352,16 @@ func (d Deps) plan(ctx context.Context, sid, client string, in ChangeInput) (Cha
 		PreHash: ev.PreHash, WriteRef: g.dev.WriteRef, Username: c.Username, Reason: in.Reason, Session: sid,
 	}, func(p change.Plan) error {
 		ev.PlanID, ev.Outcome = p.ID, "ok"
-		return d.Audit.Write(ev)
+		return d.record(ev)
 	})
 	switch {
 	case err != nil && ev.PlanID == "":
-		return refuse("refused", err)
+		return ChangeOutput{}, d.refuse(ev, "refused", err)
 	case err != nil:
-		d.Log.Error("audit write failed; plan refused", "err", err)
 		return ChangeOutput{}, errors.New("the audit log cannot be written, so the plan is refused")
 	}
-	diff := make([]string, len(lines))
-	for i, l := range lines {
-		diff[i], _ = output.Redact(output.Sanitize(l))
+	diff, _ := redactLines(lines)
+	for i := range diff {
 		diff[i] = "+ " + diff[i]
 	}
 	out.PlanID, out.Device, out.Diff, out.PreHash = p.ID, p.Device, strings.Join(diff, "\n"), p.PreHash

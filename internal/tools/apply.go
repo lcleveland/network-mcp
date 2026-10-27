@@ -6,9 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
-	"regexp"
 	"slices"
-	"strings"
 	"time"
 
 	"github.com/lcleveland/network-mcp/internal/audit"
@@ -16,7 +14,6 @@ import (
 	"github.com/lcleveland/network-mcp/internal/change/hash"
 	"github.com/lcleveland/network-mcp/internal/change/iosxe"
 	"github.com/lcleveland/network-mcp/internal/change/nxos"
-	"github.com/lcleveland/network-mcp/internal/creds"
 	"github.com/lcleveland/network-mcp/internal/output"
 	"github.com/lcleveland/network-mcp/internal/platform"
 	"github.com/lcleveland/network-mcp/internal/sshcli"
@@ -45,70 +42,16 @@ func grace(drv change.Driver) time.Duration {
 	return 0
 }
 
-// timed gives every command on a session its own request timeout, so a
-// session kept open for confirm outlives the apply call.
-type timed struct {
-	*sshcli.Session
-	d time.Duration
-}
-
-func (t timed) Run(ctx context.Context, cmd string) (string, error) {
-	ctx, cancel := context.WithTimeout(ctx, t.d)
-	defer cancel()
-	return t.Session.Run(ctx, cmd)
-}
-
-func (t timed) Ask(ctx context.Context, cmd string, q *regexp.Regexp) (string, error) {
-	ctx, cancel := context.WithTimeout(ctx, t.d)
-	defer cancel()
-	return t.Session.Ask(ctx, cmd, q)
-}
-
-func checkReason(r string) error {
-	if strings.TrimSpace(r) == "" || len(r) > maxReason {
-		return fmt.Errorf("reason is required, at most %d bytes", maxReason)
-	}
-	return nil
-}
-
-func redactLines(lines []string) ([]string, int) {
-	out, total := make([]string, len(lines)), 0
-	for i, l := range lines {
-		var n int
-		out[i], n = output.Redact(output.Sanitize(l))
-		total += n
-	}
-	return out, total
-}
-
 // writeEvent is an audit line for a plan's device; c adds the change fields.
 func writeEvent(event, sid, client, reason string, p change.Plan, c *change.Change) audit.Event {
 	cmds, _ := redactLines(p.Lines)
-	ev := audit.Event{Event: event, MCPSession: sid, Client: client, Reason: output.Cap(output.Sanitize(reason), maxReason),
+	ev := audit.Event{Event: event, MCPSession: sid, Client: client, Reason: cleanReason(reason),
 		Device: p.Device, Address: p.Address, Platform: p.Driver, HostKey: p.HostKey, CredRef: p.WriteRef,
 		Username: p.Username, PlanID: p.ID, Commands: cmds, PreHash: p.PreHash}
 	if c != nil {
 		ev.ChangeID, ev.PostHash, ev.Revert, ev.Deadline = c.ID, c.PostHash, c.Minutes, c.Deadline.UTC().Format(time.RFC3339)
 	}
 	return ev
-}
-
-// refuse audits a refusal and returns it, capped and redacted.
-func (d Deps) refuse(ev audit.Event, outcome string, err error) error {
-	msg, _ := output.Field(err.Error(), output.LongCap)
-	ev.Outcome, ev.Error = outcome, msg
-	d.audit(ev)
-	return errors.New(msg)
-}
-
-// begin writes the line that must exist before a write reaches the device.
-func (d Deps) begin(ev audit.Event) error {
-	ev.Outcome = "started"
-	if err := d.Audit.Write(ev); err != nil {
-		d.Log.Error("audit write failed; write refused", "err", err)
-		return errors.New("the audit log cannot be written, so the action is refused")
-	}
-	return nil
 }
 
 // failed audits a device-side failure and returns it as device_error.
@@ -118,45 +61,6 @@ func (d Deps) failed(ev audit.Event, out ChangeOutput, err error) (ChangeOutput,
 	out.Outcome = "device_error"
 	out.DeviceError, out.Redactions, out.Untrusted = deviceError(err)
 	return out, nil
-}
-
-// target re-gates a plan's device and checks that its address and pinned
-// host key are still the ones the plan bound. Writes use the plan's ref.
-func (d Deps) target(ctx context.Context, p change.Plan) (*gated, error) {
-	g, err := d.gate(ctx, p.Device)
-	if err != nil {
-		return nil, err
-	}
-	hk, err := sshcli.HostKey(d.Config.KnownHosts, g.addr, g.dev.Port)
-	switch {
-	case err != nil:
-		return nil, err
-	case g.addr.String() != p.Address || hk != p.HostKey:
-		return nil, fmt.Errorf("the address or pinned host key of %s changed since the plan; plan again", p.Device)
-	}
-	g.ref = p.WriteRef
-	return g, nil
-}
-
-// dial opens a fresh session with g's write ref (as user, when set). The
-// prompt must be privileged: the server never runs enable.
-func (d Deps) dial(ctx context.Context, g *gated, user string) (timed, error) {
-	c, err := creds.Read(d.Config.CredentialsDir, g.ref)
-	if err != nil {
-		return timed{}, err
-	}
-	if user != "" && c.Username != user {
-		return timed{}, fmt.Errorf("the write_ref %s no longer holds the planned username", g.ref)
-	}
-	s, err := d.openAs(ctx, g, c)
-	if err != nil {
-		return timed{}, err
-	}
-	if !strings.HasSuffix(s.Prompt(), "#") {
-		s.Close()
-		return timed{}, errors.New("the write account's prompt is not privileged (#); the server never runs enable")
-	}
-	return timed{s, d.Config.RequestTimeout}, nil
 }
 
 func runningHash(ctx context.Context, c change.Conn, g *gated) (string, error) {
@@ -169,7 +73,7 @@ func runningHash(ctx context.Context, c change.Conn, g *gated) (string, error) {
 
 // apply consumes a plan and applies it under the device's revert timer.
 func (d Deps) apply(ctx context.Context, sid, client string, in ChangeInput) (ChangeOutput, error) {
-	ev := audit.Event{Event: "apply", MCPSession: sid, Client: client, Reason: output.Cap(output.Sanitize(in.Reason), maxReason), PlanID: in.PlanID}
+	ev := audit.Event{Event: "apply", MCPSession: sid, Client: client, Reason: cleanReason(in.Reason), PlanID: in.PlanID}
 	minutes := cmp.Or(in.RevertMinutes, DefaultRevert)
 	if err := checkReason(in.Reason); err != nil {
 		return ChangeOutput{}, d.refuse(ev, "refused", err)
@@ -245,8 +149,7 @@ func (d Deps) apply(ctx context.Context, sid, client string, in ChangeInput) (Ch
 		return d.failed(ev, out, errors.Join(err, drv.Rollback(ctx, conn, c.ID)))
 	}
 	ev.PostHash, ev.Outcome = c.PostHash, "ok"
-	if err := d.Audit.Write(ev); err != nil {
-		d.Log.Error("audit write failed; change reverted", "err", err)
+	if d.record(ev) != nil {
 		drv.Rollback(ctx, conn, c.ID)
 		return ChangeOutput{}, errors.New("the audit log cannot be written, so the change was reverted")
 	}
@@ -294,7 +197,7 @@ func onDevice(ctx context.Context, fresh timed, c *change.Change, step func(chan
 // confirm proves the device is still reachable on a fresh session and
 // still holds the applied config, then stops the revert.
 func (d Deps) confirm(ctx context.Context, sid, client string, in ChangeInput) (ChangeOutput, error) {
-	ev := audit.Event{Event: "confirm", MCPSession: sid, Client: client, Reason: output.Cap(output.Sanitize(in.Reason), maxReason), ChangeID: in.ChangeID}
+	ev := audit.Event{Event: "confirm", MCPSession: sid, Client: client, Reason: cleanReason(in.Reason), ChangeID: in.ChangeID}
 	if err := checkReason(in.Reason); err != nil {
 		return ChangeOutput{}, d.refuse(ev, "refused", err)
 	}
@@ -351,7 +254,7 @@ func (d Deps) confirm(ctx context.Context, sid, client string, in ChangeInput) (
 
 // rollback reverts now and checks the device is back at pre_hash.
 func (d Deps) rollback(ctx context.Context, sid, client string, in ChangeInput) (ChangeOutput, error) {
-	ev := audit.Event{Event: "rollback", MCPSession: sid, Client: client, Reason: output.Cap(output.Sanitize(in.Reason), maxReason), ChangeID: in.ChangeID}
+	ev := audit.Event{Event: "rollback", MCPSession: sid, Client: client, Reason: cleanReason(in.Reason), ChangeID: in.ChangeID}
 	if err := checkReason(in.Reason); err != nil {
 		return ChangeOutput{}, d.refuse(ev, "refused", err)
 	}
@@ -458,7 +361,7 @@ func (d Deps) deadlineCheck(c *change.Change) {
 // save copies running to startup, only at the post-hash of the last change
 // this server confirmed on the device and with nothing pending.
 func (d Deps) save(ctx context.Context, sid, client string, in ChangeInput) (ChangeOutput, error) {
-	ev := audit.Event{Event: "save", MCPSession: sid, Client: client, Reason: output.Cap(output.Sanitize(in.Reason), maxReason), Device: in.Device}
+	ev := audit.Event{Event: "save", MCPSession: sid, Client: client, Reason: cleanReason(in.Reason), Device: in.Device}
 	switch {
 	case !d.Config.AllowSave:
 		return ChangeOutput{}, d.refuse(ev, "refused", errors.New("save needs --allow-save"))

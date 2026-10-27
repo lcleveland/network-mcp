@@ -49,7 +49,7 @@ func Checkpoints(ctx context.Context, c change.Conn) ([]string, error) {
 func (Driver) Ready(ctx context.Context, c change.Conn, _ string) error {
 	names, err := Checkpoints(ctx, c)
 	if err == nil && len(names) > 0 {
-		err = fmt.Errorf("checkpoint %s is on the device: a change nobody confirmed or rolled back; an operator must check it and run rollback running-config checkpoint <name> or no checkpoint <name>", strings.Join(names, ", "))
+		err = fmt.Errorf("checkpoint %s is on the device: a change nobody confirmed or rolled back; an operator must recover it by hand (README: Recovering a leftover checkpoint)", strings.Join(names, ", "))
 	}
 	return err
 }

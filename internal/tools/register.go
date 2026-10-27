@@ -112,7 +112,5 @@ func (d Deps) openAs(ctx context.Context, g *gated, c creds.Cred) (*sshcli.Sessi
 }
 
 func (d Deps) deny(event, device, address, command string, err error) {
-	if aerr := d.Audit.Write(audit.Event{Event: event, Outcome: "denied", Error: err.Error(), Device: device, Address: address, Command: command}); aerr != nil {
-		d.Log.Error("audit write failed", "err", aerr)
-	}
+	d.audit(audit.Event{Event: event, Outcome: "denied", Error: err.Error(), Device: device, Address: address, Command: command})
 }

@@ -105,7 +105,7 @@ func registerExport(s *mcp.Server, d Deps) {
 		}
 		dst := d.Config.File.Destinations[in.Destination]
 		det := exportAudit{Destination: in.Destination, Devices: in.Devices, Kinds: in.Kinds, SHA256: map[string]string{},
-			Redact: dst.Redact == nil || *dst.Redact, Reason: output.Cap(output.Sanitize(in.Reason), maxReason)}
+			Redact: dst.Redact == nil || *dst.Redact, Reason: cleanReason(in.Reason)}
 		det.Session, _ = session(req)
 		if !det.Redact {
 			d.Log.Warn("exporting configs unredacted", "destination", in.Destination, "devices", in.Devices)
@@ -142,7 +142,7 @@ func registerExport(s *mcp.Server, d Deps) {
 		}
 
 		// fail closed: no audit line, no write
-		if err := d.Audit.Write(audit.Event{Event: "export", Outcome: "allowed", Detail: det}); err != nil {
+		if err := d.record(audit.Event{Event: "export", Outcome: "allowed", Detail: det}); err != nil {
 			return nil, ExportOutput{}, fmt.Errorf("export refused: audit log unavailable: %w", err)
 		}
 		var rs []export.Receipt
@@ -173,9 +173,7 @@ func registerExport(s *mcp.Server, d Deps) {
 		if perr != nil {
 			e.Outcome, e.Error = "error", perr.Error()
 		}
-		if err := d.Audit.Write(e); err != nil {
-			d.Log.Error("audit write failed", "err", err)
-		}
+		d.audit(e)
 		return nil, out, nil
 	})
 }
