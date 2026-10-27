@@ -140,7 +140,7 @@ func registerStatus(s *mcp.Server, d Deps) {
 			if g.plat.Driver == platform.NXOS {
 				names, err := nxos.Checkpoints(ctx, ses)
 				if err == nil && len(names) > 0 {
-					err = errors.New("network-mcp-* checkpoints mark changes nobody confirmed or rolled back; see stale_checkpoints")
+					err = errors.New("network-mcp-* checkpoints mark changes nobody confirmed or rolled back; see stale_checkpoints and the README's Recovering a leftover checkpoint")
 					out.Checkpoints, out.Untrusted = names, append(out.Untrusted, "stale_checkpoints")
 				}
 				check("checkpoints", err)

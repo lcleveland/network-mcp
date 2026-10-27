@@ -232,7 +232,8 @@ func registerChange(s *mcp.Server, d Deps) {
 			"the revert (NX-OS: deletes the checkpoint). It does not save.\n\nrollback: change_id. Reverts now and checks " +
 			"pre_hash (NX-OS: then deletes the checkpoint).\n\n" + save +
 			"status: this session's plans and pending changes; with change_id of an NX-OS change, also the other " +
-			"network-mcp-* checkpoints on its device (stale_checkpoints).\n\n" + UntrustedNote,
+			"network-mcp-* checkpoints on its device (stale_checkpoints). After a restart there are no change records; list " +
+			"leftover network-mcp-* checkpoints with network_status and device.\n\n" + UntrustedNote,
 		InputSchema: in,
 		Annotations: &mcp.ToolAnnotations{DestructiveHint: new(true), OpenWorldHint: new(true)},
 	}, func(ctx context.Context, req *mcp.CallToolRequest, in ChangeInput) (*mcp.CallToolResult, ChangeOutput, error) {
