@@ -76,7 +76,7 @@ in
     check "--addr 127.0.0.1:8232" cmd
     check "--path /mcp" cmd
     check "--config /nix/store/" cmd
-    check "--tool-groups core,cli" cmd
+    check "--tool-groups core,cli,export" cmd
     refute "--known-hosts" cmd
     refute "--allow-adhoc" cmd
     refute "http-auth-token" creds
@@ -100,7 +100,12 @@ in
         extraArgs = [ "--stdio=false" ];
         settings = {
           management_prefixes = [ "192.0.2.0/24" ];
-          rules = [ { match = "default"; read_ref = "ssh-read"; } ];
+          rules = [
+            {
+              match = "default";
+              read_ref = "ssh-read";
+            }
+          ];
         };
       }
       ''
@@ -148,4 +153,32 @@ in
   module-no-prefixes = mustFail "no-prefixes" {
     settings = { };
   } "management_prefixes is empty";
+  module-destination-outside-state = mustFail "destination-outside-state" {
+    settings = {
+      management_prefixes = [ "192.0.2.0/24" ];
+      destinations.local = {
+        type = "dir";
+        path = "/srv/export";
+      };
+    };
+  } "not under /var/lib/network-mcp/";
+
+  # Export destinations need a writable state directory under the hardened unit.
+  module-state-dir =
+    let
+      sc =
+        (evalModule (base {
+          settings = {
+            management_prefixes = [ "192.0.2.0/24" ];
+            destinations.local = {
+              type = "dir";
+              path = "/var/lib/network-mcp/export";
+            };
+          };
+        })).systemd.services.network-mcp.serviceConfig;
+    in
+    assert
+      sc.StateDirectory == "network-mcp" && sc.ProtectSystem == "strict"
+      || throw "StateDirectory: ${toString sc.StateDirectory}";
+    pkgs.runCommand "network-mcp-state-dir" { } "touch $out";
 }

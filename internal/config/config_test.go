@@ -119,6 +119,11 @@ func TestParseFile(t *testing.T) {
 		"management_prefixes: [192.0.2.0/24]\nplatforms: {C9K: {}, c9k: {}}":                                                                                  "repeats",
 		"management_prefixes: [192.0.2.0/24]\nplatforms: {c9k: {getters: {x: 'show version | json'}}}":                                                        "character",
 		"management_prefixes: [192.0.2.0/24]\nplatforms: {c9k: {read_allow: ['a b']}}":                                                                        "one keyword",
+		"management_prefixes: [192.0.2.0/24]\ndestinations: {local: {type: s3, path: /x}}":                                                                    "want dir",
+		"management_prefixes: [192.0.2.0/24]\ndestinations: {local: {type: dir, path: x}}":                                                                    "absolute",
+		"management_prefixes: [192.0.2.0/24]\ndestinations: {local: {type: dir, path: /}}":                                                                    "absolute",
+		"management_prefixes: [192.0.2.0/24]\ndestinations: {../x: {type: dir, path: /x}}":                                                                    "name",
+		"management_prefixes: [192.0.2.0/24]\ndestinations: {local: {type: dir, path: /x, url: y}}":                                                           "url",
 	} {
 		if _, err := ParseFile([]byte(in)); err == nil || !strings.Contains(err.Error(), want) {
 			t.Errorf("%q: %v, want %q", in, err, want)
@@ -138,12 +143,17 @@ rules:
   - {match: {tag: core}, snmp: {version: v3, ref: snmp-core}}
   - {match: {device: dev1}, read_ref: dev1-read}
   - {match: adhoc, read_ref: adhoc-read}
+destinations:
+  local: {type: dir, path: /var/lib/network-mcp/export, redact: false}
 `))
 	if err != nil {
 		t.Fatal(err)
 	}
 	if got := f.Sources[0].AddressOrder; strings.Join(got, ",") != "primary_ip4,primary_ip6,oob_ip" {
 		t.Errorf("default address_order: %v", got)
+	}
+	if d := f.Destinations["local"]; d.Path != "/var/lib/network-mcp/export" || d.Redact == nil || *d.Redact {
+		t.Errorf("destination: %+v", d)
 	}
 	if m := f.Rules[1].Match; m.Kind != "platform" || m.Value != "nxos" || f.Rules[4].Match.Kind != "adhoc" || f.Rules[2].SNMP.Ref != "snmp-core" {
 		t.Errorf("%+v", f.Rules)

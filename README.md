@@ -16,6 +16,9 @@ The server is read-only. Before anything reaches a device, it checks four things
 | core (always on) | `network_inventory` | `list` (filters `name` glob, `platform`, `driver`, `tag`; `fields`; `limit` 50, max 200) or `get` (`name`: merged record, provenance, credential ref names, and gate verdicts `opt_in`, `in_prefix`, `host_key_pinned`, `reachable_reason`). Contacts no device. |
 | cli | `network_show` | `device` and exactly one of `getter` or `command`; filters `include`, `exclude`, `section`. Raw text, or JSON in `data` on NX-OS. |
 | cli | `network_config` | `action: get`, `device`, `source: running\|startup`; the same filters. Always redacted. |
+| export | `network_export` | `devices` (at most 50), `kinds: [running, startup]`, `destination`, `reason`. Writes `<device>/<kind>.txt` to a configured destination; returns per device and kind `ref`, `changed`, `sha256` or an error, never config text. Absent without `destinations`. |
+
+**Export.** On demand only; history lives in the destination. Configs are redacted before any sink unless the destination sets `redact: false`, which is logged on every export. A device is written whole or not at all, an identical config is not rewritten (`changed: false`), and every export is audit-logged (destination, devices, kinds, hashes, refs, `redact`, reason, session) before anything is written; if the audit line cannot be written the export is refused. Device names with `/`, `\`, `..`, control characters or a leading `.`, and IP literals, are refused. The `dir` sink writes a temp file, fsyncs and renames, confined to its root.
 
 **Config reads.** `network_config` sends a command the server picks, never user text, so it skips the read gate's deny list (which blocks config dumps in `network_show`). IOS, IOS-XE and NX-OS use `show running-config` and `show startup-config`; any other platform needs `platforms.<value>.config.running` / `.startup`, which must stay inside the read gate's character set, and is refused until set. Redaction patterns are Cisco-shaped; elsewhere only the catch-all (`password`, `secret`, `key`, `community`, `psk`, `passphrase`) is likely to match, so give the server a read-only device account.
 
@@ -47,7 +50,7 @@ Results are JSON built by the server. Device text appears only in the fields lis
 | `--config` | `NETWORK_MCP_CONFIG` | required |
 | `--credentials-dir` | `CREDENTIALS_DIRECTORY` | required |
 | `--known-hosts` | `NETWORK_MCP_KNOWN_HOSTS` | required if any device uses SSH |
-| `--tool-groups` | | all (`cli`; `core` is always on) |
+| `--tool-groups` | | all (`cli`, `export`; `core` is always on) |
 | `--allow-adhoc` | | off; needs `adhoc_prefixes` |
 | `--request-timeout`, `--log-level` | `NETWORK_MCP_LOG_LEVEL` | `30s`, `info` |
 | `--stdio` / `--http` | | stdio |
@@ -84,6 +87,8 @@ platforms:                             # optional; keys match the platform value
     read_allow: [who]                  # extra first keywords
     read_deny: [show clients detail]   # extra deny entries
     config: {running: show running-config, startup: show startup-config} # for network_config
+destinations:                          # optional; none means no network_export
+  local: {type: dir, path: /var/lib/network-mcp/export}  # redact: false is allowed, off by default
 ```
 
 Getter commands pass the same read gate. Allow and deny entries only add: none removes a compiled-in deny or widens the character set, and an unknown driver or profile, or a getter command the gate refuses, stops startup.
@@ -142,7 +147,8 @@ The module:
 - renders `settings` to the `--config` file (or takes `configFile`); it holds structure and ref names only;
 - passes each credential and the bearer token through systemd `LoadCredential`, so no secret reaches the Nix store, argv or the environment, and refuses paths inside the store;
 - serves streamable HTTP on `127.0.0.1:8232` as a hardened DynamicUser, and refuses a non-loopback `listenAddress` without `bearerTokenFile`;
-- refuses empty `settings.management_prefixes`.
+- refuses empty `settings.management_prefixes`;
+- gives the unit `StateDirectory=network-mcp`, the only place it can write: export destination paths must live under `/var/lib/network-mcp/`, and the module refuses a `settings.destinations` path elsewhere.
 
 `overlays.default` adds `pkgs.network-mcp`. To install only the CLI for stdio use on a workstation, set `services.network-mcp.installCli = true;` and leave `enable` off.
 

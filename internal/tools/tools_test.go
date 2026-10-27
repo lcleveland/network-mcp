@@ -2,9 +2,11 @@ package tools
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/netip"
 	"os"
@@ -51,6 +53,8 @@ type setup struct {
 	platforms map[string]platform.Config
 	adhoc     bool
 	second    string // YAML for a second file source, merged after the first
+	dests     map[string]config.Destination
+	auditW    io.Writer // default: e.audit
 }
 
 func startWith(t *testing.T, su setup) *env {
@@ -76,7 +80,8 @@ func startWith(t *testing.T, su setup) *env {
 				{Match: config.Match{Kind: "default"}, ReadRef: "ssh-read"},
 				{Match: config.Match{Kind: "adhoc"}, ReadRef: "adhoc-read"},
 			},
-			Platforms: su.platforms,
+			Platforms:    su.platforms,
+			Destinations: su.dests,
 		},
 		AllowAdhoc: su.adhoc,
 	}
@@ -94,7 +99,7 @@ func startWith(t *testing.T, su setup) *env {
 	dns := map[string]string{"dev1.example.net": fake.Host, "far.example.net": "203.0.113.9"}
 	s := mcp.NewServer(&mcp.Implementation{Name: "test"}, nil)
 	e.deps = Deps{
-		Config: cfg, Inv: inv, Audit: audit.New(e.audit),
+		Config: cfg, Inv: inv, Audit: audit.New(cmp.Or[io.Writer](su.auditW, e.audit)),
 		Log: slog.New(slog.NewTextHandler(e.log, &slog.HandlerOptions{Level: slog.LevelDebug})),
 		Lookup: func(_ context.Context, h string) ([]netip.Addr, error) {
 			return []netip.Addr{netip.MustParseAddr(dns[h])}, nil
@@ -241,7 +246,7 @@ func TestAdhoc(t *testing.T) {
 func TestStatus(t *testing.T) {
 	e := start(t, nil, sshfake.Options{})
 	out, _ := e.call(t, "network_status", nil)
-	if out["version"] == nil || fmt.Sprint(out["groups"]) != "[core cli]" || !strings.Contains(fmt.Sprint(out["sources"]), "devices:4") {
+	if out["version"] == nil || fmt.Sprint(out["groups"]) != "[core cli export]" || !strings.Contains(fmt.Sprint(out["sources"]), "devices:4") {
 		t.Fatalf("server status: %v", out)
 	}
 

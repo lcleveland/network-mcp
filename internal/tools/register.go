@@ -40,6 +40,10 @@ func Register(s *mcp.Server, d Deps) int {
 		registerConfig(s, d)
 		n += 2
 	}
+	if d.Config.Enabled("export") && len(d.Config.File.Destinations) > 0 {
+		registerExport(s, d)
+		n++
+	}
 	return n
 }
 

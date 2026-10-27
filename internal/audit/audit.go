@@ -18,6 +18,7 @@ type Event struct {
 	Address string    `json:"address,omitempty"`
 	Command string    `json:"command,omitempty"`
 	CredRef string    `json:"cred_ref,omitempty"` // the ref name, never its contents
+	Detail  any       `json:"detail,omitempty"`   // event-specific fields
 }
 
 type Log struct {
