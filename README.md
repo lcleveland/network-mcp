@@ -13,6 +13,7 @@ The server is read-only. Before anything reaches a device, it checks four things
 | Group | Tool | What it does |
 |---|---|---|
 | core (always on) | `network_status` | Without `device`: version, enabled groups, inventory source health. With `device`: each connect check in order (prefix gate, TCP, host key, auth, prompt). Runs no CLI command. |
+| core (always on) | `network_inventory` | `list` (filters `name` glob, `platform`, `driver`, `tag`; `fields`; `limit` 50, max 200) or `get` (`name`: merged record, provenance, credential ref names, and gate verdicts `opt_in`, `in_prefix`, `host_key_pinned`, `reachable_reason`). Contacts no device. |
 | cli | `network_show` | `device` and exactly one of `getter` or `command`; filters `include`, `exclude`, `section`. Raw text, or JSON in `data` on NX-OS. |
 | cli | `network_config` | `action: get`, `device`, `source: running\|startup`; the same filters. Always redacted. |
 

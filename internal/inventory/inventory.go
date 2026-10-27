@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"net/netip"
 	"os"
 	"slices"
@@ -264,6 +265,12 @@ func (inv *Inventory) Health(ctx context.Context) []Health {
 	return h
 }
 
+// List returns every merged device, sorted by name.
+func (inv *Inventory) List(ctx context.Context) []*Device {
+	devs, _ := inv.list(ctx)
+	return slices.SortedFunc(maps.Values(devs), func(a, b *Device) int { return strings.Compare(a.Name, b.Name) })
+}
+
 // Get finds a device by name, case-insensitively. With --allow-adhoc, an IP
 // literal no source knows becomes an ad-hoc device if it is inside
 // adhoc_prefixes: generic driver, adhoc rule only.
@@ -303,24 +310,32 @@ func Gate(ctx context.Context, d *Device, prefixes []netip.Prefix, lookup Lookup
 	if d.Unreachable != "" {
 		return netip.Addr{}, fmt.Errorf("device %s is unreachable: %s", d.Name, d.Unreachable)
 	}
+	a, _, err := InPrefix(ctx, d, prefixes, lookup)
+	return a, err
+}
+
+// InPrefix resolves the device address; every address must be inside a
+// management prefix. It returns the first address and the prefix holding it.
+func InPrefix(ctx context.Context, d *Device, prefixes []netip.Prefix, lookup Lookup) (netip.Addr, netip.Prefix, error) {
 	addrs := []netip.Addr{}
 	if a, err := netip.ParseAddr(d.Address); err == nil {
 		addrs = append(addrs, a)
 	} else {
 		var err error
 		if addrs, err = lookup(ctx, d.Address); err != nil {
-			return netip.Addr{}, fmt.Errorf("resolving %s: %w", d.Address, err)
+			return netip.Addr{}, netip.Prefix{}, fmt.Errorf("resolving %s: %w", d.Address, err)
 		}
 		if len(addrs) == 0 {
-			return netip.Addr{}, fmt.Errorf("%s resolved to no address", d.Address)
+			return netip.Addr{}, netip.Prefix{}, fmt.Errorf("%s resolved to no address", d.Address)
 		}
 	}
 	for _, a := range addrs {
 		if !inside(a.Unmap(), prefixes) {
-			return netip.Addr{}, fmt.Errorf("device %s address %s is outside management_prefixes", d.Name, a.Unmap())
+			return netip.Addr{}, netip.Prefix{}, fmt.Errorf("device %s address %s is outside management_prefixes", d.Name, a.Unmap())
 		}
 	}
-	return addrs[0].Unmap(), nil
+	a := addrs[0].Unmap()
+	return a, prefixes[slices.IndexFunc(prefixes, func(p netip.Prefix) bool { return p.Contains(a) })], nil
 }
 
 func inside(a netip.Addr, prefixes []netip.Prefix) bool {

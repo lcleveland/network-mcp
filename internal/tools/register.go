@@ -33,7 +33,8 @@ func Register(s *mcp.Server, d Deps) int {
 		d.Log = slog.New(slog.DiscardHandler)
 	}
 	registerStatus(s, d)
-	n := 1
+	registerInventory(s, d)
+	n := 2
 	if d.Config.Enabled("cli") {
 		registerShow(s, d)
 		registerConfig(s, d)

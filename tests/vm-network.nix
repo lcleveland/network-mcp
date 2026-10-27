@@ -169,7 +169,11 @@ pkgs.testers.runNixOSTest {
         rpc("initialize", {"protocolVersion": "2025-06-18", "capabilities": {}, "clientInfo": {"name": "vm", "version": "0"}})
         rpc("notifications/initialized", notify=True)
         names = {t["name"] for t in rpc("tools/list")["tools"]}
-        assert names == {"network_status", "network_show", "network_config"}, names
+        assert names == {"network_status", "network_inventory", "network_show", "network_config"}, names
+
+    with subtest("network_inventory lists the VM device"):
+        out = tool("network_inventory", {"action": "list", "name": "dev*"})
+        assert [r["name"] for r in out["rows"]] == ["dev1"] and out["total"] == 1, out
 
     with subtest("network_status reaches the device"):
         st = tool("network_status", {"device": "dev1"})

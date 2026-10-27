@@ -50,6 +50,7 @@ type setup struct {
 	platform  string
 	platforms map[string]platform.Config
 	adhoc     bool
+	second    string // YAML for a second file source, merged after the first
 }
 
 func startWith(t *testing.T, su setup) *env {
@@ -78,6 +79,11 @@ func startWith(t *testing.T, su setup) *env {
 			Platforms: su.platforms,
 		},
 		AllowAdhoc: su.adhoc,
+	}
+	if su.second != "" {
+		p := filepath.Join(dir, "second.yaml")
+		os.WriteFile(p, []byte(su.second), 0o600)
+		cfg.File.Sources = append(cfg.File.Sources, config.Source{Name: "second", Type: "file", Path: p})
 	}
 	os.WriteFile(filepath.Join(dir, "adhoc-read"), []byte(`{"username":"adhoc","password":"`+secret+`"}`), 0o400)
 	inv, err := inventory.Load(cfg)
@@ -270,14 +276,15 @@ func TestToolGroups(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, tl := range res.Tools {
-		if tl.Name != "network_status" {
+		if tl.Name != "network_status" && tl.Name != "network_inventory" {
 			t.Fatalf("%s registered with --tool-groups core", tl.Name)
 		}
-		if tl.Annotations == nil || tl.Annotations.OpenWorldHint == nil || !*tl.Annotations.OpenWorldHint || !tl.Annotations.ReadOnlyHint {
+		// the inventory touches no device
+		if tl.Annotations == nil || tl.Annotations.OpenWorldHint == nil || *tl.Annotations.OpenWorldHint != (tl.Name == "network_status") || !tl.Annotations.ReadOnlyHint {
 			t.Errorf("%s annotations: %+v", tl.Name, tl.Annotations)
 		}
 	}
-	if len(res.Tools) != 1 {
+	if len(res.Tools) != 2 {
 		t.Fatalf("%d tools", len(res.Tools))
 	}
 }

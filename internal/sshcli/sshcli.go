@@ -8,8 +8,10 @@ package sshcli
 import (
 	"bytes"
 	"context"
+	"crypto/ed25519"
 	"errors"
 	"fmt"
+	"net"
 	"net/netip"
 	"regexp"
 	"strings"
@@ -19,6 +21,7 @@ import (
 	"github.com/scrapli/scrapligo/driver/options"
 	"github.com/scrapli/scrapligo/platform"
 	"github.com/scrapli/scrapligo/util"
+	"golang.org/x/crypto/ssh"
 	"golang.org/x/crypto/ssh/knownhosts"
 
 	"github.com/lcleveland/network-mcp/internal/creds"
@@ -227,4 +230,18 @@ func clean(out, cmd string) string {
 		out = rest
 	}
 	return strings.TrimRight(out, "\n ")
+}
+
+// Pinned reports whether known_hosts holds a key for addr:port, without
+// dialling: a probe key that matches nothing shows whether any key is wanted.
+func Pinned(knownHosts string, addr netip.Addr, port int) bool {
+	cb, err := knownhosts.New(knownHosts)
+	if err != nil {
+		return false
+	}
+	probe, _ := ssh.NewPublicKey(ed25519.PublicKey(make([]byte, ed25519.PublicKeySize)))
+	ap := netip.AddrPortFrom(addr, uint16(port))
+	err = cb(ap.String(), net.TCPAddrFromAddrPort(ap), probe)
+	var ke *knownhosts.KeyError
+	return err == nil || errors.As(err, &ke) && len(ke.Want) > 0
 }

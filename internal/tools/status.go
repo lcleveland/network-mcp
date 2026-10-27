@@ -76,7 +76,15 @@ func registerStatus(s *mcp.Server, d Deps) {
 			return err == nil
 		}
 
-		if !check("management_prefix", err) {
+		// name the gate that refused, in the order inventory.Gate runs them
+		gateName := "management_prefix"
+		switch {
+		case !g.dev.OptedIn:
+			gateName = "opt_in"
+		case g.dev.Unreachable != "":
+			gateName = "reachable"
+		}
+		if !check(gateName, err) {
 			return nil, out, nil
 		}
 		ctx, cancel := context.WithTimeout(ctx, d.Config.RequestTimeout)
