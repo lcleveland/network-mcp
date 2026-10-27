@@ -114,6 +114,11 @@ func (Driver) Save(ctx context.Context, c change.Conn) error {
 	return err
 }
 
+// Forget has nothing to drop: the timer leaves no marker.
+func (Driver) Forget(context.Context, change.Conn, string) error { return nil }
+
+func (Driver) DeviceReverts() bool { return true }
+
 // run fails on any line of the reply that starts with %, not only the
 // driver's known failure strings.
 func run(ctx context.Context, c change.Conn, cmd string) (string, error) {

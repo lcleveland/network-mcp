@@ -78,29 +78,12 @@ func (d *Device) open() int {
 	return d.sessions
 }
 
-// handle answers cmd in session sid. mode is "" in exec mode or the
-// config mode in the prompt. ask prints a question and reads the answer.
 func (d *Device) handle(sid int, mode *string, cmd string, ask func(string) error) (string, bool) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	d.log = append(d.log, fmt.Sprintf("%d %s", sid, cmd))
 	if *mode != "" {
-		switch out, ok := d.Errors[cmd]; {
-		case cmd == "end":
-			*mode = ""
-		case ok:
-			return out, true
-		case cmd != "":
-			ind := ""
-			if *mode != "config" {
-				ind = " "
-			}
-			d.Running += ind + cmd + "\n"
-			if f := strings.Fields(cmd)[0]; f == "interface" || f == "vlan" || f == "router" {
-				*mode = "config-" + map[string]string{"interface": "if", "vlan": "vlan", "router": "router"}[f]
-			}
-		}
-		return "", true
+		return configLine(&d.Running, d.Errors, mode, cmd), true
 	}
 	refuse := func() string {
 		switch {
@@ -160,10 +143,35 @@ func (d *Device) handle(sid int, mode *string, cmd string, ask func(string) erro
 	return "", false
 }
 
+// configLine applies one config-mode line to running, unless errs holds
+// its error reply, and returns the reply.
+func configLine(running *string, errs map[string]string, mode *string, cmd string) string {
+	switch out, ok := errs[cmd]; {
+	case cmd == "end":
+		*mode = ""
+	case ok:
+		return out
+	case cmd != "":
+		ind := ""
+		if *mode != "config" {
+			ind = " "
+		}
+		*running += ind + cmd + "\n"
+		if f := strings.Fields(cmd)[0]; f == "interface" || f == "vlan" || f == "router" {
+			*mode = "config-" + map[string]string{"interface": "if", "vlan": "vlan", "router": "router"}[f]
+		}
+	}
+	return ""
+}
+
 // diff is a set difference shaped like IOS's contextual diff.
 func diff(old, cur string) string {
+	return "Contextual Config Diffs:\n" + setDiff(old, cur)
+}
+
+func setDiff(old, cur string) string {
 	o, c := strings.Split(old, "\n"), strings.Split(cur, "\n")
-	out := "Contextual Config Diffs:\n"
+	out := ""
 	for _, l := range c {
 		if l != "" && !slices.Contains(o, l) {
 			out += "+" + l + "\n"

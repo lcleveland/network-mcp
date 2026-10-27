@@ -8,9 +8,11 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
+	"github.com/lcleveland/network-mcp/internal/change/nxos"
 	"github.com/lcleveland/network-mcp/internal/config"
 	"github.com/lcleveland/network-mcp/internal/inventory"
 	"github.com/lcleveland/network-mcp/internal/output"
+	"github.com/lcleveland/network-mcp/internal/platform"
 	"github.com/lcleveland/network-mcp/internal/sshcli"
 	"github.com/lcleveland/network-mcp/internal/version"
 )
@@ -34,6 +36,7 @@ type StatusOutput struct {
 	Address     string             `json:"address,omitempty"`
 	Checks      []Check            `json:"checks,omitempty"`
 	Prompt      string             `json:"prompt,omitempty"`
+	Checkpoints []string           `json:"stale_checkpoints,omitempty"` // NX-OS network-mcp-* checkpoints
 	DeviceError string             `json:"device_error,omitempty"`
 	Untrusted   []string           `json:"_untrusted,omitempty"`
 	Redactions  int                `json:"_redactions,omitempty"`
@@ -46,7 +49,9 @@ func registerStatus(s *mcp.Server, d Deps) {
 		Description: "Without device: the server version, enabled tool groups, the health of each inventory source and, " +
 			"with network_change enabled, the pending plan and change counts.\n\n" +
 			"With device: each connect check in order (management-prefix gate, TCP, pinned host key, read-credential auth, " +
-			"prompt detected; only the gate for an SNMP-only device, one with no read_ref), stopping at the first failure; then, if the device has SNMP, an SNMP sysUpTime.0 read. It runs no CLI command. " +
+			"prompt detected; only the gate for an SNMP-only device, one with no read_ref), stopping at the first failure; on NX-OS " +
+			"it then runs show checkpoint summary and lists any network-mcp-* checkpoint (a change nobody confirmed or rolled back) " +
+			"in stale_checkpoints; then, if the device has SNMP, an SNMP sysUpTime.0 read. It runs no other CLI command. " +
 			"Call this first when network_show fails.\n\n" + UntrustedNote,
 		Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true, OpenWorldHint: new(true)},
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, in StatusInput) (*mcp.CallToolResult, StatusOutput, error) {
@@ -130,6 +135,14 @@ func registerStatus(s *mcp.Server, d Deps) {
 			}
 			out.Prompt = field(ses.Prompt(), output.FieldCap)
 			out.Untrusted = []string{"prompt"}
+			if g.plat.Driver == platform.NXOS {
+				names, err := nxos.Checkpoints(ctx, ses)
+				if err == nil && len(names) > 0 {
+					err = errors.New("network-mcp-* checkpoints mark changes nobody confirmed or rolled back; see stale_checkpoints")
+					out.Checkpoints, out.Untrusted = names, append(out.Untrusted, "stale_checkpoints")
+				}
+				check("checkpoints", err)
+			}
 		}()
 		if g.dev.SNMP != nil {
 			up, err := d.sysUpTime(ctx, g)

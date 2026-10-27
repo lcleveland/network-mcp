@@ -29,7 +29,15 @@ type Engine struct {
 	PagerLines  int               // default 24
 	DropOn      string            // command whose output is cut short with io.ErrUnexpectedEOF
 	Log         func(line string) // called with every line received; may be nil
-	Device      *Device           // stateful IOS-XE config, shared by every session; may be nil
+	Device      device            // a stateful *Device (IOS-XE) or *Nexus shared by every session; may be nil
+}
+
+// device is a stateful fake config shared by an Engine's sessions.
+type device interface {
+	open() int // a new session's number, or 0 while the device is down
+	// handle answers cmd in session sid. mode is "" in exec mode or the
+	// config mode in the prompt. ask prints a question and reads the answer.
+	handle(sid int, mode *string, cmd string, ask func(string) error) (string, bool)
 }
 
 // Serve runs one CLI session. It returns nil on EOF, "exit" or "quit".

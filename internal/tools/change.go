@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -14,6 +15,7 @@ import (
 	"github.com/lcleveland/network-mcp/internal/change"
 	"github.com/lcleveland/network-mcp/internal/change/deny"
 	"github.com/lcleveland/network-mcp/internal/change/hash"
+	"github.com/lcleveland/network-mcp/internal/change/nxos"
 	"github.com/lcleveland/network-mcp/internal/creds"
 	"github.com/lcleveland/network-mcp/internal/output"
 	"github.com/lcleveland/network-mcp/internal/platform"
@@ -29,7 +31,7 @@ type ChangeInput struct {
 	Reason        string   `json:"reason,omitempty" jsonschema:"every action but status: why; required and audited"`
 	PlanID        string   `json:"plan_id,omitempty" jsonschema:"apply: the plan_id from plan"`
 	RevertMinutes int      `json:"revert_minutes,omitempty" jsonschema:"apply: minutes until the device reverts an unconfirmed change, 2 to 15 (default 5)"`
-	ChangeID      string   `json:"change_id,omitempty" jsonschema:"confirm, rollback: the change_id from apply"`
+	ChangeID      string   `json:"change_id,omitempty" jsonschema:"confirm, rollback, status: the change_id from apply"`
 }
 
 // ChangeView is a pending change in status.
@@ -67,6 +69,8 @@ type ChangeOutput struct {
 	Plans       []PlanView         `json:"plans,omitempty"`
 	Pending     []ChangeView       `json:"pending,omitempty"`
 	Changes     *ChangeStatus      `json:"changes,omitempty"`
+	Warning     string             `json:"warning,omitempty"`           // NX-OS apply: the revert is server-driven
+	Stale       []string           `json:"stale_checkpoints,omitempty"` // status with an NX-OS change_id
 	DeviceError string             `json:"device_error,omitempty"`
 	Untrusted   []string           `json:"_untrusted,omitempty"`
 	Redactions  int                `json:"_redactions"`
@@ -113,13 +117,18 @@ func registerChange(s *mcp.Server, d Deps) {
 			"(AAA, users, lines, SSH, crypto, SNMP, logging, boot, the management VRF, interface and ACLs, and more; " +
 			"abbreviations count) or is end, exit, do or configure. It returns plan_id, the lines as a diff, pre_hash and its " +
 			"expiry (10 minutes); a plan is bound to this session, used once, and never changes the device.\n\n" +
-			"apply: plan_id, revert_minutes (2-15, default 5). IOS-XE only. The device must have archive path set, no revert " +
-			"timer pending, no configuration lock and the planned pre_hash. The lines go in under configure terminal revert " +
-			"timer, so the device reverts on its own unless confirmed before the deadline; any % error reverts at once. " +
-			"Returns change_id, deadline, post_hash and the device's diff.\n\n" +
+			"apply: plan_id, revert_minutes (2-15, default 5). The device must still have the planned pre_hash. IOS-XE: the " +
+			"device must have archive path set, no revert timer pending and no configuration lock. The lines go in under " +
+			"configure terminal revert timer, so the device reverts on its own unless confirmed before the deadline; any % " +
+			"error reverts at once. NX-OS: refused while any network-mcp-* checkpoint is on the device. The server creates " +
+			"checkpoint network-mcp-<change_id>, sends the lines, and rolls back to it at the deadline unless confirmed; any " +
+			"error rolls back at once. " + fmt.Sprintf(nxos.Warning, "<change_id>") + " Returns change_id, deadline, " +
+			"post_hash, the device's diff and, on NX-OS, that warning.\n\n" +
 			"confirm: change_id. From a new SSH session (proving the device is still reachable), checks post_hash and stops " +
-			"the revert. It does not save.\n\nrollback: change_id. Reverts now and checks pre_hash.\n\n" + save +
-			"status: this session's plans and pending changes.\n\n" + UntrustedNote,
+			"the revert (NX-OS: deletes the checkpoint). It does not save.\n\nrollback: change_id. Reverts now and checks " +
+			"pre_hash (NX-OS: then deletes the checkpoint).\n\n" + save +
+			"status: this session's plans and pending changes; with change_id of an NX-OS change, also the other " +
+			"network-mcp-* checkpoints on its device (stale_checkpoints).\n\n" + UntrustedNote,
 		InputSchema: in,
 		Annotations: &mcp.ToolAnnotations{DestructiveHint: new(true), OpenWorldHint: new(true)},
 	}, func(ctx context.Context, req *mcp.CallToolRequest, in ChangeInput) (*mcp.CallToolResult, ChangeOutput, error) {
@@ -131,6 +140,13 @@ func registerChange(s *mcp.Server, d Deps) {
 			"plan": d.plan, "apply": d.apply, "confirm": d.confirm, "rollback": d.rollback, "save": d.save,
 		}[in.Action]
 		switch {
+		case in.Action == "status" && in.ChangeID != "":
+			out := d.changeStatus(sid)
+			var err error
+			if out.Stale, err = d.stale(ctx, sid, in.ChangeID); len(out.Stale) > 0 {
+				out.Untrusted = []string{"stale_checkpoints"}
+			}
+			return nil, out, err
 		case in.Action == "status":
 			return nil, d.changeStatus(sid), nil
 		case act == nil:
@@ -154,6 +170,27 @@ func (d Deps) changeStatus(sid string) ChangeOutput {
 		}
 	}
 	return out
+}
+
+// stale lists the network-mcp-* checkpoints, other than the change's own,
+// on the NX-OS device of the session's change: changes nobody confirmed or
+// rolled back. It sends no config and is not audited.
+func (d Deps) stale(ctx context.Context, sid, id string) ([]string, error) {
+	c, err := d.Changes.Get(id, sid)
+	if err != nil || c.Plan.Driver != platform.NXOS {
+		return nil, err
+	}
+	g, err := d.target(ctx, c.Plan)
+	if err != nil {
+		return nil, err
+	}
+	conn, err := d.dial(ctx, g, c.Plan.Username)
+	if err != nil {
+		return nil, err
+	}
+	defer conn.Close()
+	names, err := nxos.Checkpoints(ctx, conn)
+	return slices.DeleteFunc(names, func(n string) bool { return n == nxos.Prefix+c.ID }), err
 }
 
 // plan never changes the device: it reads the running config only.

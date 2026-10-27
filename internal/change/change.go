@@ -79,6 +79,12 @@ type Driver interface {
 	// Pending reports a change left unconfirmed on the device by any process.
 	Pending(ctx context.Context, c Conn) (bool, error)
 	Save(ctx context.Context, c Conn) error
+	// Forget drops the device-side marker of a change whose revert the
+	// caller verified (the running config hashes to the pre-hash).
+	Forget(ctx context.Context, c Conn, id string) error
+	// DeviceReverts reports whether the device reverts an unconfirmed
+	// change on its own; if not, the server rolls it back at the deadline.
+	DeviceReverts() bool
 }
 
 // Change is an applied, unconfirmed change. Its fields are fixed once

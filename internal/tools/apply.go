@@ -15,6 +15,7 @@ import (
 	"github.com/lcleveland/network-mcp/internal/change"
 	"github.com/lcleveland/network-mcp/internal/change/hash"
 	"github.com/lcleveland/network-mcp/internal/change/iosxe"
+	"github.com/lcleveland/network-mcp/internal/change/nxos"
 	"github.com/lcleveland/network-mcp/internal/creds"
 	"github.com/lcleveland/network-mcp/internal/output"
 	"github.com/lcleveland/network-mcp/internal/platform"
@@ -33,7 +34,16 @@ const (
 const deadlineGrace = time.Minute
 
 // drivers are the platforms that can apply a change.
-var drivers = map[string]change.Driver{platform.IOSXE: iosxe.Driver{}}
+var drivers = map[string]change.Driver{platform.IOSXE: iosxe.Driver{}, platform.NXOS: nxos.Driver{}}
+
+// grace is how long after its deadline a change is checked: the device
+// timer's head start, or none when the server reverts it.
+func grace(drv change.Driver) time.Duration {
+	if drv.DeviceReverts() {
+		return deadlineGrace
+	}
+	return 0
+}
 
 // timed gives every command on a session its own request timeout, so a
 // session kept open for confirm outlives the apply call.
@@ -226,6 +236,9 @@ func (d Deps) apply(ctx context.Context, sid, client string, in ChangeInput) (Ch
 	diff, err := drv.Apply(ctx, conn, c.ID, p.Lines, minutes)
 	if err != nil {
 		ev.PostHash, _ = runningHash(ctx, conn, g) // shows whether the revert restored pre_hash
+		if ev.PostHash == p.PreHash {
+			err = errors.Join(err, drv.Forget(ctx, conn, c.ID))
+		}
 		return d.failed(ev, out, err)
 	}
 	if c.PostHash, err = runningHash(ctx, conn, g); err != nil {
@@ -239,11 +252,14 @@ func (d Deps) apply(ctx context.Context, sid, client string, in ChangeInput) (Ch
 	}
 	d.Changes.Commit(c)
 	committed = true
-	time.AfterFunc(c.Deadline.Sub(d.Changes.Now())+deadlineGrace, d.sweep)
+	time.AfterFunc(c.Deadline.Sub(d.Changes.Now())+grace(drv), d.sweep)
 
 	f, _ := output.NewFilter(nil, nil, "")
 	out.Diff, out.Redactions, out.Truncation = f.Text(diff, false)
 	out.Outcome, out.PostHash, out.Deadline, out.Untrusted = "applied", c.PostHash, ev.Deadline, []string{"diff"}
+	if !drv.DeviceReverts() {
+		out.Warning = fmt.Sprintf(nxos.Warning, c.ID)
+	}
 	return out, nil
 }
 
@@ -289,7 +305,7 @@ func (d Deps) confirm(ctx context.Context, sid, client string, in ChangeInput) (
 	defer c.Unlock()
 	ev = writeEvent("confirm", sid, client, in.Reason, c.Plan, c)
 	if !d.Changes.Now().Before(c.Deadline) {
-		return ChangeOutput{}, d.refuse(ev, "refused", errors.New("the deadline has passed; the device timer reverts the change"))
+		return ChangeOutput{}, d.refuse(ev, "refused", errors.New("the deadline has passed; the change reverts"))
 	}
 	g, err := d.target(ctx, c.Plan)
 	if err != nil {
@@ -297,14 +313,14 @@ func (d Deps) confirm(ctx context.Context, sid, client string, in ChangeInput) (
 	}
 	conn, err := d.dial(ctx, g, c.Plan.Username)
 	if err != nil {
-		return ChangeOutput{}, d.refuse(ev, "refused", fmt.Errorf("not confirmed, the device timer reverts the change: %w", err))
+		return ChangeOutput{}, d.refuse(ev, "refused", fmt.Errorf("not confirmed, the change reverts at its deadline: %w", err))
 	}
 	defer conn.Close()
 	switch h, err := runningHash(ctx, conn, g); {
 	case err != nil:
 		return ChangeOutput{}, d.refuse(ev, "refused", err)
 	case h != c.PostHash:
-		return ChangeOutput{}, d.refuse(ev, "refused", errors.New("the running config changed since apply; not confirmed, the device timer reverts the change"))
+		return ChangeOutput{}, d.refuse(ev, "refused", errors.New("the running config changed since apply; not confirmed, the change reverts at its deadline"))
 	}
 	if err := d.begin(ev); err != nil {
 		return ChangeOutput{}, err
@@ -346,7 +362,7 @@ func (d Deps) rollback(ctx context.Context, sid, client string, in ChangeInput) 
 	}
 	conn, err := d.dial(ctx, g, c.Plan.Username)
 	if err != nil {
-		return ChangeOutput{}, d.refuse(ev, "refused", fmt.Errorf("the device timer reverts the change at its deadline: %w", err))
+		return ChangeOutput{}, d.refuse(ev, "refused", fmt.Errorf("the change reverts at its deadline: %w", err))
 	}
 	defer conn.Close()
 	if err := d.begin(ev); err != nil {
@@ -364,6 +380,9 @@ func (d Deps) rollback(ctx context.Context, sid, client string, in ChangeInput) 
 	if err == nil && h != c.Plan.PreHash {
 		err = errors.New("reverted, but the running config does not match pre_hash")
 	}
+	if err == nil { // only a verified revert drops the marker
+		err = drv.Forget(ctx, conn, c.ID)
+	}
 	if err != nil {
 		return d.failed(ev, out, err)
 	}
@@ -374,10 +393,10 @@ func (d Deps) rollback(ctx context.Context, sid, client string, in ChangeInput) 
 }
 
 // sweep is the one-shot check of every change past its deadline (plus
-// grace): the device timer should have reverted it.
+// grace): the device timer should have reverted it, or the server reverts it now.
 func (d Deps) sweep() {
 	for _, c := range d.Changes.Changes() {
-		if d.Changes.Now().Before(c.Deadline.Add(deadlineGrace)) {
+		if d.Changes.Now().Before(c.Deadline.Add(grace(drivers[c.Plan.Driver]))) {
 			continue
 		}
 		c.Lock()
@@ -390,9 +409,13 @@ func (d Deps) sweep() {
 }
 
 func (d Deps) deadlineCheck(c *change.Change) {
+	// shortcut: one request timeout covers dial, rollback and re-hash; a slow
+	// NX-OS rollback audits unreachable and keeps its checkpoint. Measure on hardware.
 	ctx, cancel := context.WithTimeout(context.Background(), d.Config.RequestTimeout)
 	defer cancel()
 	ev := writeEvent("deadline", c.Plan.Session, "", c.Plan.Reason, c.Plan, c)
+	drv := drivers[c.Plan.Driver]
+	var derr error // the server's revert or dropping the marker
 	h, err := func() (string, error) {
 		g, err := d.target(ctx, c.Plan)
 		if err != nil {
@@ -403,7 +426,14 @@ func (d Deps) deadlineCheck(c *change.Change) {
 			return "", err
 		}
 		defer conn.Close()
-		return runningHash(ctx, conn, g)
+		if !drv.DeviceReverts() {
+			derr = drv.Rollback(ctx, conn, c.ID)
+		}
+		h, err := runningHash(ctx, conn, g)
+		if err == nil && h == c.Plan.PreHash {
+			derr = errors.Join(derr, drv.Forget(ctx, conn, c.ID))
+		}
+		return h, err
 	}()
 	switch {
 	case err != nil:
@@ -412,6 +442,9 @@ func (d Deps) deadlineCheck(c *change.Change) {
 		ev.Outcome = "reverted"
 	default:
 		ev.Outcome = "not_reverted"
+	}
+	if derr != nil && ev.Error == "" {
+		ev.Error = output.Cap(output.Sanitize(derr.Error()), output.LongCap)
 	}
 	ev.Detail = map[string]string{"running_hash": h}
 	d.audit(ev)
