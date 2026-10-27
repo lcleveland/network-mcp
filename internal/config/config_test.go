@@ -257,3 +257,50 @@ func TestAllowConfig(t *testing.T) {
 		t.Fatal("bad write_deny accepted")
 	}
 }
+
+func TestPrefixesRef(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+	os.WriteFile(path, []byte("prefixes_ref: net-prefixes\n"), 0o600)
+	ref := filepath.Join(dir, "net-prefixes")
+	args := []string{"--config", path, "--credentials-dir", dir, "--allow-adhoc"}
+	noenv := func(string) string { return "" }
+
+	os.WriteFile(ref, []byte(`{"management_prefixes": ["192.0.2.0/24"], "adhoc_prefixes": ["192.0.2.128/25"]}`), 0o400)
+	c, err := Parse(args, noenv)
+	if err != nil || len(c.File.ManagementPrefixes) != 1 || len(c.File.AdhocPrefixes) != 1 {
+		t.Fatalf("%v %v", c, err)
+	}
+	var buf bytes.Buffer
+	slog.New(slog.NewTextHandler(&buf, nil)).Info("x", "config", c)
+	if s := buf.String(); strings.Contains(s, "192.0.2") || !strings.Contains(s, "management_prefixes=1") || !strings.Contains(s, "adhoc_prefixes=1") {
+		t.Fatalf("log: %s", s)
+	}
+
+	for body, want := range map[string]string{
+		"":         "net-prefixes", // missing ref
+		"not json": "not JSON",
+		`{"management_prefixes": ["198.51.100.300/24"]}`:                                   "not JSON",
+		`{"management_prefixes": []}`:                                                      "management_prefixes is empty",
+		`{"management_prefixes": ["192.0.2.0/24"], "adhoc_prefixes": ["198.51.100.0/24"]}`: "adhoc_prefixes[0] is not inside",
+		`{"management_prefixes": ["192.0.2.0/24"]}`:                                        "--allow-adhoc",
+	} {
+		os.Remove(ref)
+		if body != "" {
+			os.WriteFile(ref, []byte(body), 0o400)
+		}
+		if _, err := Parse(args, noenv); err == nil || !strings.Contains(err.Error(), want) || strings.Contains(err.Error(), "198.51.100") {
+			t.Errorf("%s: %v, want %q", body, err, want)
+		}
+	}
+
+	for in, want := range map[string]string{
+		"prefixes_ref: p\nmanagement_prefixes: [192.0.2.0/24]": "mutually exclusive",
+		"prefixes_ref: p\nadhoc_prefixes: [192.0.2.0/24]":      "mutually exclusive",
+		"prefixes_ref: ../p": "valid ref",
+	} {
+		if _, err := ParseFile([]byte(in)); err == nil || !strings.Contains(err.Error(), want) {
+			t.Errorf("%q: %v, want %q", in, err, want)
+		}
+	}
+}

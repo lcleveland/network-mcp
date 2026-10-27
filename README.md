@@ -94,6 +94,7 @@ The config file holds structure only, never secrets:
 ```yaml
 management_prefixes: [192.0.2.0/24]   # empty or missing refuses startup
 adhoc_prefixes: [192.0.2.128/25]      # optional, inside management_prefixes; used only with --allow-adhoc
+# prefixes_ref: net-prefixes           # instead of both lists above (never with them); see Credential refs
 resolve_names: false                   # true: DNS-resolve a device no source gives an address
 sources:                               # merged in this order; see Inventory
   - {name: file, type: file, path: /etc/network-mcp/devices.yaml}
@@ -142,7 +143,7 @@ The device file is a list. Names are unique and case-insensitive, and every devi
 
 **Ad-hoc addresses.** With `--allow-adhoc`, a `device` that is an IP literal no source knows is accepted if it is inside `adhoc_prefixes`: `generic_ssh`, credentials from the `adhoc` rule only, host key still pinned. Without the flag it is refused.
 
-**Credential refs.** A ref is the file `$CREDENTIALS_DIRECTORY/<ref>`. It holds JSON, either `{"username": …, "password": …}` or `{"username": …, "private_key": …}`; an SNMP ref holds `{"community": …}` for v2c or `{"username", "auth_protocol", "auth_password", "priv_protocol", "priv_password"}` for v3 (auth `MD5`, `SHA`, `SHA224`–`SHA512`; priv `DES`, `AES`, `AES192`, `AES256`, `AES192C`, `AES256C`). An export `credential` holds `{"username"?, "private_key"}` for a git ssh:// remote, `{"username"?, "token"}` for https:// (username defaults to `git`), or `{"access_key_id", "secret_access_key", "session_token"?}` for s3. The server reads it on every connect and never caches or logs it. No secret is ever taken from a flag or an environment variable.
+**Credential refs.** A ref is the file `$CREDENTIALS_DIRECTORY/<ref>`. It holds JSON, either `{"username": …, "password": …}` or `{"username": …, "private_key": …}`; an SNMP ref holds `{"community": …}` for v2c or `{"username", "auth_protocol", "auth_password", "priv_protocol", "priv_password"}` for v3 (auth `MD5`, `SHA`, `SHA224`–`SHA512`; priv `DES`, `AES`, `AES192`, `AES256`, `AES192C`, `AES256C`). An export `credential` holds `{"username"?, "private_key"}` for a git ssh:// remote, `{"username"?, "token"}` for https:// (username defaults to `git`), or `{"access_key_id", "secret_access_key", "session_token"?}` for s3. The server reads it on every connect and never caches or logs it. The `prefixes_ref` ref holds `{"management_prefixes": ["192.0.2.0/24"], "adhoc_prefixes": ["192.0.2.128/25"]}` (`adhoc_prefixes` optional), read once at startup; the same checks apply, and its errors and the startup log name no prefix (the log shows only counts). No secret is ever taken from a flag or an environment variable.
 
 **Host keys.** The server dials the resolved IP address, so pin each device's key in the `--known-hosts` file under its IP (`[ip]:port` for a port other than 22).
 
@@ -183,7 +184,7 @@ The module:
 - renders `settings` to the `--config` file (or takes `configFile`); it holds structure and ref names only;
 - passes each credential and the bearer token through systemd `LoadCredential`, so no secret reaches the Nix store, argv or the environment, and refuses paths inside the store;
 - serves streamable HTTP on `127.0.0.1:8232` as a hardened DynamicUser, and refuses a non-loopback `listenAddress` without `bearerTokenFile`;
-- refuses empty `settings.management_prefixes`;
+- refuses empty `settings.management_prefixes` unless `settings.prefixes_ref` is set, and refuses a `prefixes_ref` without an entry in `credentials`. Use `prefixes_ref = "net-prefixes";` with `credentials.net-prefixes = "/run/secrets/net-prefixes";` to keep the prefixes out of the Nix store;
 - gives the unit `StateDirectory=network-mcp`, the only place it can write: export destination paths must live under `/var/lib/network-mcp/`, and the module refuses a `settings.destinations` path elsewhere.
 - passes each of `mibDirs` as `--mib-dir`.
 

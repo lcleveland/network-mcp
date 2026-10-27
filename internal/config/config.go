@@ -61,6 +61,7 @@ type Config struct {
 type File struct {
 	ManagementPrefixes []netip.Prefix `yaml:"management_prefixes"`
 	AdhocPrefixes      []netip.Prefix `yaml:"adhoc_prefixes"` // a subset of management_prefixes
+	PrefixesRef        string         `yaml:"prefixes_ref"`   // ref holding both lists instead of inline
 	ResolveNames       bool           `yaml:"resolve_names"`  // DNS-resolve a device no source gives an address
 	Sources            []Source       `yaml:"sources"`
 	Rules              []Rule         `yaml:"rules"`
@@ -142,7 +143,8 @@ func (c *Config) LogValue() slog.Value {
 		slog.String("config", c.ConfigPath),
 		slog.String("known_hosts", c.KnownHosts),
 		slog.Any("groups", c.Groups),
-		slog.Any("management_prefixes", c.File.ManagementPrefixes),
+		slog.Int("management_prefixes", len(c.File.ManagementPrefixes)),
+		slog.Int("adhoc_prefixes", len(c.File.AdhocPrefixes)),
 		slog.Int("sources", len(c.File.Sources)),
 		slog.Bool("http", c.HTTP),
 		slog.String("addr", c.Addr),
@@ -233,8 +235,16 @@ func Parse(args []string, getenv func(string) string) (*Config, error) {
 	if c.File, err = ParseFile(b); err != nil {
 		return nil, fmt.Errorf("%s: %w", c.ConfigPath, err)
 	}
+	if c.File.PrefixesRef != "" {
+		if c.File.ManagementPrefixes, c.File.AdhocPrefixes, err = creds.Prefixes(c.CredentialsDir, c.File.PrefixesRef); err != nil {
+			return nil, fmt.Errorf("prefixes_ref: %w", err)
+		}
+		if err := checkPrefixes(c.File); err != nil {
+			return nil, fmt.Errorf("prefixes_ref %q: %w", c.File.PrefixesRef, err)
+		}
+	}
 	if c.AllowAdhoc && len(c.File.AdhocPrefixes) == 0 {
-		return nil, errors.New("--allow-adhoc needs adhoc_prefixes in the config file")
+		return nil, errors.New("--allow-adhoc needs adhoc_prefixes in the config file or prefixes_ref")
 	}
 	if c.AllowConfig { // only existence and mode: the secret is read fresh per call
 		for _, r := range c.File.Rules {
@@ -322,13 +332,15 @@ func ParseFile(b []byte) (File, error) {
 	if err := dec.Decode(&f); err != nil && !errors.Is(err, io.EOF) {
 		return f, err
 	}
-	if len(f.ManagementPrefixes) == 0 {
-		return f, errors.New("management_prefixes is empty: the server connects only to devices inside them")
-	}
-	for _, a := range f.AdhocPrefixes {
-		if !slices.ContainsFunc(f.ManagementPrefixes, func(m netip.Prefix) bool { return m.Bits() <= a.Bits() && m.Contains(a.Addr()) }) {
-			return f, fmt.Errorf("adhoc_prefixes: %s is not inside management_prefixes", a)
+	switch {
+	case f.PrefixesRef == "": // Parse checks a ref's lists once it reads them
+		if err := checkPrefixes(f); err != nil {
+			return f, err
 		}
+	case f.ManagementPrefixes != nil || f.AdhocPrefixes != nil:
+		return f, errors.New("prefixes_ref and inline management_prefixes or adhoc_prefixes are mutually exclusive")
+	case !creds.ValidRef(f.PrefixesRef):
+		return f, fmt.Errorf("prefixes_ref %q is not a valid ref name", f.PrefixesRef)
 	}
 	seen := map[string]bool{}
 	for i := range f.Sources {
@@ -362,6 +374,19 @@ func ParseFile(b []byte) (File, error) {
 		return f, err
 	}
 	return f, platform.Validate(f.Platforms)
+}
+
+// checkPrefixes names an index, never a prefix: a ref's prefixes stay out of errors.
+func checkPrefixes(f File) error {
+	if len(f.ManagementPrefixes) == 0 {
+		return errors.New("management_prefixes is empty: the server connects only to devices inside them")
+	}
+	for i, a := range f.AdhocPrefixes {
+		if !slices.ContainsFunc(f.ManagementPrefixes, func(m netip.Prefix) bool { return m.Bits() <= a.Bits() && m.Contains(a.Addr()) }) {
+			return fmt.Errorf("adhoc_prefixes[%d] is not inside management_prefixes", i)
+		}
+	}
+	return nil
 }
 
 var branchName = regexp.MustCompile(`^[A-Za-z0-9_][A-Za-z0-9._-]*(/[A-Za-z0-9_][A-Za-z0-9._-]*)*$`)

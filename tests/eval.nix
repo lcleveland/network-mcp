@@ -194,6 +194,22 @@ in
   module-no-prefixes = mustFail "no-prefixes" {
     settings = { };
   } "management_prefixes is empty";
+  module-prefixes-ref =
+    unitCheck "module-prefixes-ref"
+      {
+        credentials.net-prefixes = "/run/secrets/net-prefixes";
+        settings.prefixes_ref = "net-prefixes";
+      }
+      ''
+        check "net-prefixes:/run/secrets/net-prefixes" creds
+        conf=$(grep -o -- '--config [^ ]*' cmd | cut -d' ' -f2)
+        check "prefixes_ref: net-prefixes" "$conf"
+        refute "management_prefixes" "$conf"
+        refute "192.0.2" "$conf"
+      '';
+  module-prefixes-ref-missing = mustFail "prefixes-ref-missing" {
+    settings.prefixes_ref = "net-prefixes";
+  } "prefixes_ref needs an entry in credentials";
   module-destination-outside-state = mustFail "destination-outside-state" {
     settings = {
       management_prefixes = [ "192.0.2.0/24" ];
