@@ -116,6 +116,10 @@ pkgs.testers.runNixOSTest {
             }
           ];
           rules = [ { match = "default"; read_ref = "ssh-read"; } ];
+          destinations.local = {
+            type = "dir";
+            path = "/var/lib/network-mcp/export";
+          };
         };
       };
     };
@@ -169,7 +173,7 @@ pkgs.testers.runNixOSTest {
         rpc("initialize", {"protocolVersion": "2025-06-18", "capabilities": {}, "clientInfo": {"name": "vm", "version": "0"}})
         rpc("notifications/initialized", notify=True)
         names = {t["name"] for t in rpc("tools/list")["tools"]}
-        assert names == {"network_status", "network_show", "network_config"}, names
+        assert names == {"network_status", "network_show", "network_config", "network_export"}, names
 
     with subtest("network_status reaches the device"):
         st = tool("network_status", {"device": "dev1"})
@@ -188,6 +192,18 @@ pkgs.testers.runNixOSTest {
         assert out["output"].endswith("end\nsnmp-server community <redacted>"), out
         assert "vm-test-community" not in json.dumps(out) and out["_redactions"] >= 1, out
 
+    with subtest("network_export writes the redacted running config"):
+        args = {"devices": ["dev1"], "kinds": ["running"], "destination": "local", "reason": "vm test"}
+        r = tool("network_export", args)["results"][0]
+        assert r["changed"] and r["ref"] == "dev1/running.txt", r
+        f = "/var/lib/network-mcp/export/dev1/running.txt"
+        body = server.succeed(f"cat {f}")
+        assert "hostname dev1" in body and "snmp-server community <redacted>" in body, body
+        assert "vm-test-community" not in body, body
+        assert r["sha256"] == server.succeed(f"sha256sum {f}").split()[0], r
+        assert not tool("network_export", args)["results"][0]["changed"]
+        server.succeed("journalctl -u network-mcp | grep -F '\"event\":\"export\"' | grep -F 'vm test'")
+
     with subtest("refused commands never reach the device"):
         tool("network_show", {"device": "dev1", "command": "debug all"}, want_error=True)
         tool("network_show", {"device": "dev1", "command": "show version | include x"}, want_error=True)
@@ -195,7 +211,8 @@ pkgs.testers.runNixOSTest {
         received = device.succeed("cat /home/fake/received.log")
         assert "show version" in received, received
         assert "debug" not in received and "include" not in received, received
-        assert received.count("show running-config") == 1, received
+        # network_config once, network_export twice; never network_show
+        assert received.count("show running-config") == 3, received
 
     with subtest("wrong pinned host key is refused"):
         st = tool("network_status", {"device": "badkey"})

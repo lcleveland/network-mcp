@@ -28,7 +28,7 @@ import (
 )
 
 // Groups are the tool groups --tool-groups may name. core is always on.
-var Groups = []string{"core", "cli"}
+var Groups = []string{"core", "cli", "export"}
 
 type Config struct {
 	ConfigPath     string
@@ -57,6 +57,15 @@ type File struct {
 	Rules              []Rule         `yaml:"rules"`
 	// keyed by the sources' platform value, case-insensitively
 	Platforms map[string]platform.Config `yaml:"platforms"`
+	// export destinations by name; none means no network_export
+	Destinations map[string]Destination `yaml:"destinations"`
+}
+
+// Destination is one export sink. dir takes path.
+type Destination struct {
+	Type   string `yaml:"type"` // dir
+	Path   string `yaml:"path"`
+	Redact *bool  `yaml:"redact"` // nil means true; false is logged on every export
 }
 
 // Source is one inventory source. file takes path; netbox takes the rest.
@@ -263,6 +272,16 @@ func ParseFile(b []byte) (File, error) {
 			return f, fmt.Errorf("rules[%d]: a ref is not a valid ref name", i)
 		case r.SNMP != nil && r.SNMP.Version != "v2c" && r.SNMP.Version != "v3":
 			return f, fmt.Errorf("rules[%d]: snmp.version %q (want v2c or v3)", i, r.SNMP.Version)
+		}
+	}
+	for n, d := range f.Destinations {
+		switch {
+		case !creds.ValidRef(n):
+			return f, fmt.Errorf("destinations: name %q may use only letters, digits, . _ -", n)
+		case d.Type != "dir":
+			return f, fmt.Errorf("destination %s: unknown type %q (want dir)", n, d.Type)
+		case !filepath.IsAbs(d.Path) || filepath.Clean(d.Path) == "/":
+			return f, fmt.Errorf("destination %s: path must be an absolute directory other than /", n)
 		}
 	}
 	return f, platform.Validate(f.Platforms)

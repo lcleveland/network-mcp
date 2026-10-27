@@ -19,12 +19,17 @@ let
   groups = [
     "core"
     "cli"
+    "export"
   ];
   isLoopback = a: a == "::1" || a == "localhost" || lib.hasPrefix "127." a;
   inStore = p: p != null && lib.hasPrefix builtins.storeDir p;
   staticUser = cfg.user != null;
   secretPaths =
     lib.attrValues cfg.credentials ++ optional (cfg.bearerTokenFile != null) cfg.bearerTokenFile;
+  stateDir = "/var/lib/network-mcp";
+  outsideState = lib.filter (p: !(lib.hasPrefix "${stateDir}/" p)) (
+    lib.mapAttrsToList (_: d: d.path or "") (cfg.settings.destinations or { })
+  );
   configFile =
     if cfg.configFile != null then cfg.configFile else yaml.generate "network-mcp.yaml" cfg.settings;
 
@@ -74,11 +79,15 @@ in
           management_prefixes = [ "192.0.2.0/24" ];
           sources = [ { name = "file"; type = "file"; path = "/etc/network-mcp/devices.yaml"; } ];
           rules = [ { match = "default"; read_ref = "ssh-read"; } ];
+          destinations.local = { type = "dir"; path = "/var/lib/network-mcp/export"; };
         }
       '';
       description = ''
         The config file, rendered as YAML and passed with `--config`. It holds
         structure and credential ref names only, never secrets.
+
+        Export destination paths must live under `/var/lib/network-mcp/`
+        (the unit's `StateDirectory`); the hardened unit can write nowhere else.
       '';
     };
     configFile = mkOption {
@@ -222,6 +231,10 @@ in
           message = "services.network-mcp.group must be set when user is set.";
         }
         {
+          assertion = outsideState == [ ];
+          message = "services.network-mcp.settings.destinations: path ${toString outsideState} is not under ${stateDir}/, the only directory the unit can write.";
+        }
+        {
           assertion = lib.hasPrefix "/" cfg.path;
           message = "services.network-mcp.path must begin with a slash.";
         }
@@ -257,6 +270,9 @@ in
           User = mkIf staticUser cfg.user;
           Group = mkIf staticUser cfg.group;
           DynamicUser = !staticUser;
+          # export destinations; writable under ProtectSystem=strict
+          StateDirectory = "network-mcp";
+          StateDirectoryMode = "0700";
 
           AmbientCapabilities = [ "" ];
           CapabilityBoundingSet = [ "" ];
