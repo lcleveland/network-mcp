@@ -31,6 +31,7 @@ type env struct {
 	cs         *mcp.ClientSession
 	fake       *sshfake.Server
 	audit, log *bytes.Buffer
+	deps       Deps
 }
 
 // start serves fixture commands from a fake dev1 and connects an in-memory
@@ -79,13 +80,14 @@ func startWith(t *testing.T, su setup) *env {
 	e := &env{fake: fake, audit: &bytes.Buffer{}, log: &bytes.Buffer{}}
 	dns := map[string]string{"dev1.example.net": fake.Host, "far.example.net": "203.0.113.9"}
 	s := mcp.NewServer(&mcp.Implementation{Name: "test"}, nil)
-	Register(s, Deps{
+	e.deps = Deps{
 		Config: cfg, Inv: inv, Audit: audit.New(e.audit),
 		Log: slog.New(slog.NewTextHandler(e.log, &slog.HandlerOptions{Level: slog.LevelDebug})),
 		Lookup: func(_ context.Context, h string) ([]netip.Addr, error) {
 			return []netip.Addr{netip.MustParseAddr(dns[h])}, nil
 		},
-	})
+	}
+	Register(s, e.deps)
 	st, ct := mcp.NewInMemoryTransports()
 	if _, err := s.Connect(context.Background(), st, nil); err != nil {
 		t.Fatal(err)
@@ -240,8 +242,8 @@ func TestToolGroups(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, tl := range res.Tools {
-		if tl.Name == "network_show" {
-			t.Fatal("network_show registered with --tool-groups core")
+		if tl.Name != "network_status" {
+			t.Fatalf("%s registered with --tool-groups core", tl.Name)
 		}
 		if tl.Annotations == nil || tl.Annotations.OpenWorldHint == nil || !*tl.Annotations.OpenWorldHint || !tl.Annotations.ReadOnlyHint {
 			t.Errorf("%s annotations: %+v", tl.Name, tl.Annotations)

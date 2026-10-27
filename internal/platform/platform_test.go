@@ -2,6 +2,7 @@ package platform
 
 import (
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/lcleveland/network-mcp/internal/gate"
@@ -44,6 +45,17 @@ func TestResolve(t *testing.T) {
 	}
 	if d := Resolve("NX-OS", cfg); d.Driver != Generic || d.Profile != "nxos" {
 		t.Errorf("override keeps the profile: %+v", d)
+	}
+	if Resolve("ios", nil).Config != cisco || Resolve("NX-OS", cfg).Config != cisco || Resolve("junos", nil).Config != (ConfigCmds{}) {
+		t.Error("compiled-in config commands")
+	}
+	aos := map[string]Config{"aos": {Config: ConfigCmds{Running: "show config running"}}}
+	if d := Resolve("AOS", aos); d.Config != aos["aos"].Config || Validate(aos) != nil {
+		t.Errorf("configured config commands: %+v", d.Config)
+	}
+	aos["aos"] = Config{Config: ConfigCmds{Startup: "show config | include x"}}
+	if err := Validate(aos); err == nil || !strings.Contains(err.Error(), "platforms.aos.config.startup") {
+		t.Errorf("config command with a pipe: %v", err)
 	}
 	if n := GetterNames(cfg); !slices.Contains(n, "clients") || !slices.Contains(n, "bgp_neighbors") || len(n) != 13 {
 		t.Errorf("names: %v", n)

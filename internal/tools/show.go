@@ -140,7 +140,12 @@ func decodeJSON(s string, try bool) (any, bool) {
 }
 
 func failed(out ShowOutput, err error) (*mcp.CallToolResult, ShowOutput, error) {
-	out.DeviceError, out.Redactions = output.Field(err.Error(), output.LongCap)
-	out.Untrusted = []string{"device_error"}
+	out.DeviceError, out.Redactions, out.Untrusted = deviceError(err)
 	return nil, out, nil
+}
+
+// deviceError is the device_error field, its redaction count and _untrusted.
+func deviceError(err error) (string, int, []string) {
+	s, n := output.Field(err.Error(), output.LongCap)
+	return s, n, []string{"device_error"}
 }

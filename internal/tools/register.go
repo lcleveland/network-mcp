@@ -38,7 +38,8 @@ func Register(s *mcp.Server, d Deps) int {
 	n := 1
 	if d.Config.Enabled("cli") {
 		registerShow(s, d)
-		n++
+		registerConfig(s, d)
+		n += 2
 	}
 	return n
 }

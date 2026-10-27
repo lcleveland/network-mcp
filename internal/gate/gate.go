@@ -46,12 +46,20 @@ func (x Ext) Validate() error {
 	return nil
 }
 
-// Check returns the command with whitespace collapsed, or why it is refused.
-func Check(cmd string, x Ext) (string, error) {
+// Chars refuses any character outside the gate's set.
+func Chars(cmd string) error {
 	for _, r := range cmd {
 		if !allowedChar(r) {
-			return "", fmt.Errorf("character %q is not allowed: use only letters, digits, spaces and . / : _ , - (no pipes; filter server-side)", r)
+			return fmt.Errorf("character %q is not allowed: use only letters, digits, spaces and . / : _ , - (no pipes; filter server-side)", r)
 		}
+	}
+	return nil
+}
+
+// Check returns the command with whitespace collapsed, or why it is refused.
+func Check(cmd string, x Ext) (string, error) {
+	if err := Chars(cmd); err != nil {
+		return "", err
 	}
 	tok := strings.Fields(cmd)
 	norm := strings.Join(tok, " ")

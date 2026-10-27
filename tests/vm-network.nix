@@ -21,6 +21,11 @@ let
       exec ${pkgs.lib.getExe fakecli} --hostname dev1 --fixtures ${
         pkgs.linkFarm "fixtures" {
           "show_version.txt" = ../testdata/third_party/ntc-templates/cisco_ios_show_version.raw;
+          # the sanitized fixture has no secrets left; add a fake one
+          "show_running-config.txt" = pkgs.writeText "running" (
+            builtins.readFile ../testdata/third_party/napalm/ios_show_running_config.txt
+            + "snmp-server community vm-test-community RO\n"
+          );
         }
       } --log /home/fake/received.log
     ''
@@ -95,6 +100,7 @@ pkgs.testers.runNixOSTest {
                   {
                     name = "dev1";
                     address = ip;
+                    platform = "cisco_ios";
                   }
                   {
                     name = "badkey";
@@ -163,7 +169,7 @@ pkgs.testers.runNixOSTest {
         rpc("initialize", {"protocolVersion": "2025-06-18", "capabilities": {}, "clientInfo": {"name": "vm", "version": "0"}})
         rpc("notifications/initialized", notify=True)
         names = {t["name"] for t in rpc("tools/list")["tools"]}
-        assert names == {"network_status", "network_show"}, names
+        assert names == {"network_status", "network_show", "network_config"}, names
 
     with subtest("network_status reaches the device"):
         st = tool("network_status", {"device": "dev1"})
@@ -176,12 +182,20 @@ pkgs.testers.runNixOSTest {
         assert "Cisco IOS Software, Catalyst" in out["output"], out
         assert out["_untrusted"] == ["output"], out
 
+    with subtest("network_config returns the redacted fixture"):
+        out = tool("network_config", {"action": "get", "device": "dev1", "source": "running"})
+        assert "hostname dev1" in out["output"], out
+        assert out["output"].endswith("end\nsnmp-server community <redacted>"), out
+        assert "vm-test-community" not in json.dumps(out) and out["_redactions"] >= 1, out
+
     with subtest("refused commands never reach the device"):
         tool("network_show", {"device": "dev1", "command": "debug all"}, want_error=True)
         tool("network_show", {"device": "dev1", "command": "show version | include x"}, want_error=True)
+        tool("network_show", {"device": "dev1", "command": "show running-config"}, want_error=True)
         received = device.succeed("cat /home/fake/received.log")
         assert "show version" in received, received
         assert "debug" not in received and "include" not in received, received
+        assert received.count("show running-config") == 1, received
 
     with subtest("wrong pinned host key is refused"):
         st = tool("network_status", {"device": "badkey"})

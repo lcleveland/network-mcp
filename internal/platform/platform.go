@@ -27,7 +27,18 @@ type Config struct {
 	Getters   map[string]string `yaml:"getters"` // name -> command, over the profile's
 	ReadAllow []string          `yaml:"read_allow"`
 	ReadDeny  []string          `yaml:"read_deny"`
+	Config    ConfigCmds        `yaml:"config"` // over the profile's
 }
+
+// ConfigCmds are what network_config sends. They skip the read gate's deny
+// list, which blocks config dumps on purpose, but not its character set.
+type ConfigCmds struct {
+	Running string `yaml:"running"`
+	Startup string `yaml:"startup"`
+}
+
+// cisco is the config command pair of every compiled-in profile.
+var cisco = ConfigCmds{"show running-config", "show startup-config"}
 
 // aliases are the compiled-in platform values (lower case): driver, profile.
 var aliases = map[string][2]string{
@@ -77,6 +88,7 @@ type Device struct {
 	Driver, Profile string
 	Getters         map[string]string
 	Gate            gate.Ext
+	Config          ConfigCmds
 }
 
 // Resolve maps a platform value, case-insensitively. Unknown or missing
@@ -88,12 +100,17 @@ func Resolve(value string, cfg map[string]Config) Device {
 	}
 	d := Device{Driver: a[0], Profile: a[1]}
 	var extra map[string]string
+	var cc ConfigCmds
 	for k, c := range cfg {
 		if strings.EqualFold(k, value) {
 			d.Driver, d.Profile = cmp.Or(c.Driver, d.Driver), cmp.Or(c.Profile, d.Profile)
-			d.Gate, extra = gate.Ext{Allow: c.ReadAllow, Deny: c.ReadDeny}, c.Getters
+			d.Gate, extra, cc = gate.Ext{Allow: c.ReadAllow, Deny: c.ReadDeny}, c.Getters, c.Config
 		}
 	}
+	if d.Profile != "" {
+		d.Config = cisco
+	}
+	d.Config = ConfigCmds{cmp.Or(cc.Running, d.Config.Running), cmp.Or(cc.Startup, d.Config.Startup)}
 	d.Getters = map[string]string{}
 	maps.Copy(d.Getters, Profiles[d.Profile])
 	maps.Copy(d.Getters, extra)
@@ -101,7 +118,8 @@ func Resolve(value string, cfg map[string]Config) Device {
 }
 
 // Validate refuses startup on an unknown driver or profile, a key that
-// repeats ignoring case, or a getter command the platform's read gate refuses.
+// repeats ignoring case, a getter command the platform's read gate refuses,
+// or a config command outside the gate's character set.
 func Validate(cfg map[string]Config) error {
 	seen := map[string]bool{}
 	for k, c := range cfg {
@@ -118,6 +136,11 @@ func Validate(cfg map[string]Config) error {
 		x := gate.Ext{Allow: c.ReadAllow, Deny: c.ReadDeny}
 		if err := x.Validate(); err != nil {
 			return fmt.Errorf("platforms.%s: %w", k, err)
+		}
+		for src, cmd := range map[string]string{"running": c.Config.Running, "startup": c.Config.Startup} {
+			if err := gate.Chars(cmd); err != nil {
+				return fmt.Errorf("platforms.%s.config.%s: %w", k, src, err)
+			}
 		}
 		for name, cmd := range c.Getters {
 			if name == "" {

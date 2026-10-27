@@ -3,6 +3,8 @@ commit 820a06b2069eb1d7b0cbe8943ee2dea6e2949d1a
 
 ios_show_env_temperature_status.txt     test/ios/mocked_data/test_get_environment/ios_xe/show_env_temperature_status.txt (sanitized, see NOTICE)
 ios_show_vlan_brief.txt                 test/ios/mocked_data/test_get_vlans/no_show_vlan_all_ports/show_vlan_brief.txt (sanitized, see NOTICE)
+ios_show_running_config.txt             test/ios/mocked_data/test_get_config/normal/show_running_config.txt (sanitized, see NOTICE)
+nxos_ssh_show_running_config.txt        test/nxos_ssh/mocked_data/test_get_config/normal/show_running_config.txt (sanitized, see NOTICE)
 nxos_show_bgp_all_summary_vrf_all.json  test/nxos/mocked_data/test_get_bgp_neighbors/l2vpn/show_bgp_all_summary_vrf_all.json (sanitized, see NOTICE)
 nxos_show_environment.json              test/nxos/mocked_data/test_get_environment/normal/show_environment.json (sanitized, see NOTICE)
 nxos_show_interface.json                test/nxos/mocked_data/test_get_interfaces/admin_up_oper_down/show_interface.json (sanitized, see NOTICE)

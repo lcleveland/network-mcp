@@ -14,6 +14,9 @@ The server is read-only. Before anything reaches a device, it checks four things
 |---|---|---|
 | core (always on) | `network_status` | Without `device`: version, enabled groups, inventory source health. With `device`: each connect check in order (prefix gate, TCP, host key, auth, prompt). Runs no CLI command. |
 | cli | `network_show` | `device` and exactly one of `getter` or `command`; filters `include`, `exclude`, `section`. Raw text, or JSON in `data` on NX-OS. |
+| cli | `network_config` | `action: get`, `device`, `source: running\|startup`; the same filters. Always redacted. |
+
+**Config reads.** `network_config` sends a command the server picks, never user text, so it skips the read gate's deny list (which blocks config dumps in `network_show`). IOS, IOS-XE and NX-OS use `show running-config` and `show startup-config`; any other platform needs `platforms.<value>.config.running` / `.startup`, which must stay inside the read gate's character set, and is refused until set. Redaction patterns are Cisco-shaped; elsewhere only the catch-all (`password`, `secret`, `key`, `community`, `psk`, `passphrase`) is likely to match, so give the server a read-only device account.
 
 **Platforms.** The device's `platform` value picks the driver and getter profile, ignoring case:
 
@@ -65,6 +68,7 @@ platforms:                             # optional; keys match the platform value
     getters: {clients: show clients}   # name -> command; overrides a profile getter of the same name
     read_allow: [who]                  # extra first keywords
     read_deny: [show clients detail]   # extra deny entries
+    config: {running: show running-config, startup: show startup-config} # for network_config
 ```
 
 Getter commands pass the same read gate. Allow and deny entries only add: none removes a compiled-in deny or widens the character set, and an unknown driver or profile, or a getter command the gate refuses, stops startup.

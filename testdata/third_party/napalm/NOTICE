@@ -13,5 +13,7 @@ Changed files (Apache-2.0 section 4(b)): every file but
 nxos_show_vlan_brief.json and LICENSE was run through cmd/sanitize, which
 replaced addresses, MACs and domains with documentation values. By hand,
 hostnames became dev1, serials SERIAL<n>, model numbers MODEL<n> and firmware
-versions and image names fw<n>. Whitespace inside JSON strings and the
+versions and image names fw<n>, SNMP contact and location noc and site1.
+The running-config files lost their secret lines (enable, username, SNMP
+community and user), timestamps and one password-policy line. Whitespace inside JSON strings and the
 NX-OS LLDP file's name changed as listed in SOURCE.
