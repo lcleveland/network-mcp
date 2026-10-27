@@ -29,7 +29,9 @@
       };
 
       packages = forAllSystems (system: rec {
-        network-mcp = (pkgsFor system).callPackage ./pkgs/network-mcp.nix { };
+        network-mcp = (pkgsFor system).callPackage ./pkgs/network-mcp.nix {
+          rev = self.shortRev or self.dirtyShortRev or null;
+        };
         default = network-mcp;
       });
 

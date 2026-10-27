@@ -133,6 +133,11 @@ pkgs.testers.runNixOSTest {
           username = "fake";
           inherit password;
         };
+        # never used to log in: --allow-config only checks its systemd (0440) mode
+        ssh-write = builtins.toJSON {
+          username = "fake";
+          inherit password;
+        };
         snmp-v2c = builtins.toJSON { inherit community; };
         snmp-v3 = builtins.toJSON v3;
         snmp-v3-bad = builtins.toJSON (v3 // { auth_password = "vm-test-wrong-password"; });
@@ -149,6 +154,7 @@ pkgs.testers.runNixOSTest {
       }) refs;
       services.network-mcp = {
         enable = true;
+        allowConfig = true;
         credentials = lib.mapAttrs (name: _: "/etc/network-mcp/${name}") (removeAttrs refs [ "bearer" ]);
         bearerTokenFile = "/etc/network-mcp/bearer";
         # Port 2222 is pinned to a key the device does not have.
@@ -197,6 +203,7 @@ pkgs.testers.runNixOSTest {
             {
               match.tag = "ssh";
               read_ref = "ssh-read";
+              write_ref = "ssh-write";
             }
             {
               match.device = "dev1";
@@ -283,7 +290,7 @@ pkgs.testers.runNixOSTest {
         rpc("initialize", {"protocolVersion": "2025-06-18", "capabilities": {}, "clientInfo": {"name": "vm", "version": "0"}})
         rpc("notifications/initialized", notify=True)
         names = {t["name"] for t in rpc("tools/list")["tools"]}
-        assert names == {"network_status", "network_inventory", "network_show", "network_config", "network_export", "network_snmp"}, names
+        assert names == {"network_status", "network_inventory", "network_show", "network_config", "network_change", "network_export", "network_snmp"}, names
 
     with subtest("network_inventory lists the VM device"):
         out = tool("network_inventory", {"action": "list", "name": "dev*"})

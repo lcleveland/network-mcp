@@ -4,6 +4,8 @@
   lib,
   buildGoModule,
   versionCheckHook,
+  # the flake passes its short commit, so --version and network_status tell builds apart
+  rev ? null,
 }:
 
 buildGoModule (finalAttrs: {
@@ -31,7 +33,9 @@ buildGoModule (finalAttrs: {
     "-s"
     "-w"
     "-X"
-    "github.com/lcleveland/network-mcp/internal/version.Version=${finalAttrs.version}"
+    "github.com/lcleveland/network-mcp/internal/version.Version=${finalAttrs.version}${
+      lib.optionalString (rev != null) "+${rev}"
+    }"
   ];
 
   # subPackages also narrows what checkPhase tests; unset it so the whole
