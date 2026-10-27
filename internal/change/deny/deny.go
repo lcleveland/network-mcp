@@ -26,6 +26,8 @@ var Default = []string{
 	"key", "tacacs", "radius", "radius-server", "service internal", "gnxi", "checkpoint", "rollback", "feature",
 	// council amendment to #29: session, trust-anchor and prompt protection
 	"ssh", "role", "hostname", "switchname", "ip domain-name", "copp", "control-plane",
+	// #35: every NX-OS CoPP map, built-in or copied, is type control-plane
+	"policy-map type control-plane", "class-map type control-plane",
 }
 
 // mode lines would leave global config or run exec commands.
@@ -71,6 +73,9 @@ type Derived struct {
 	ACLs       []string // referenced by access-class, snmp-server, or the connect interface
 	VRFs       []string // the management VRF and the connect interface's VRF
 	Interfaces []string // owning the address the server connects to
+	Policies   []string // CoPP policy-maps: under control-plane, and their children
+	Classes    []string // class-maps those policies use, and their nested classes
+	AllMaps    bool     // a CoPP name has no block: deny every policy-map and class-map line
 }
 
 // Check normalizes the lines (whitespace collapsed) or says why the plan is
@@ -123,7 +128,21 @@ func (l List) denied(tok []string, d Derived) string {
 			return fmt.Sprintf("touches interface %s, which owns the address the server connects to", f)
 		}
 	}
+	if mapLine(tok, d) {
+		return "edits a policy-map or class-map the control plane uses"
+	}
 	return ""
+}
+
+// mapLine: "policy-map|class-map … <derived name> …", or any such line when AllMaps.
+func mapLine(tok []string, d Derived) bool {
+	for kw, names := range map[string][]string{"policy-map": d.Policies, "class-map": d.Classes} {
+		if strings.HasPrefix(kw, tok[0]) &&
+			(d.AllMaps || slices.ContainsFunc(names, func(n string) bool { return slices.Contains(tok[1:], n) })) {
+			return true
+		}
+	}
+	return false
 }
 
 func match(tok, entry []string) bool {
@@ -215,10 +234,6 @@ func splitLast(s string) (string, int, bool) {
 // connect is the address the server dials. Names are lower case.
 func Derive(running string, connect netip.Addr) Derived {
 	var d Derived
-	type block struct {
-		name string
-		body [][]string
-	}
 	var blocks []block
 	for line := range strings.SplitSeq(output.Sanitize(running), "\n") {
 		tok := strings.Fields(strings.ToLower(line))
@@ -228,9 +243,9 @@ func Derive(running string, connect netip.Addr) Derived {
 		indented := line[0] == ' '
 		switch {
 		case !indented && tok[0] == "interface" && len(tok) > 1:
-			blocks = append(blocks, block{name: strings.Join(tok[1:], "")})
+			blocks = append(blocks, block{head: tok, name: strings.Join(tok[1:], "")})
 		case !indented:
-			blocks = append(blocks, block{})
+			blocks = append(blocks, block{head: tok})
 		default:
 			if len(blocks) > 0 {
 				blocks[len(blocks)-1].body = append(blocks[len(blocks)-1].body, tok)
@@ -257,7 +272,71 @@ func Derive(running string, connect netip.Addr) Derived {
 			d.ACLs = append(d.ACLs, after(t, "traffic-filter")...)
 		}
 	}
+	copp(&d, blocks)
 	return d
+}
+
+// block is a top-level config line and its indented body; name is set for interfaces.
+type block struct {
+	head []string
+	name string
+	body [][]string
+}
+
+// copp derives the CoPP policies, their classes and the classes' ACLs (#35).
+// The worklists grow while they are walked, so each closure runs to a fixed point.
+func copp(d *Derived, blocks []block) {
+	add := func(s *[]string, n string) {
+		if !slices.Contains(*s, n) {
+			*s = append(*s, n)
+		}
+	}
+	// a service-policy without a name fails safe
+	policy := func(t []string) {
+		if len(t) < 2 {
+			d.AllMaps = true
+		} else {
+			add(&d.Policies, t[len(t)-1])
+		}
+	}
+	maps := map[string][][]string{} // "policy-map <name>" or "class-map <name>": body
+	for _, b := range blocks {
+		switch b.head[0] {
+		case "control-plane":
+			for _, t := range b.body {
+				if t[0] == "service-policy" {
+					policy(t)
+				}
+			}
+		case "policy-map", "class-map":
+			k := b.head[0] + " " + b.head[len(b.head)-1]
+			maps[k] = append(maps[k], b.body...)
+		}
+	}
+	for i := 0; i < len(d.Policies); i++ {
+		body, ok := maps["policy-map "+d.Policies[i]]
+		d.AllMaps = d.AllMaps || !ok
+		for _, t := range body {
+			switch {
+			case t[0] == "class" && len(t) > 1 && t[len(t)-1] != "class-default":
+				add(&d.Classes, t[len(t)-1])
+			case t[0] == "service-policy":
+				policy(t)
+			}
+		}
+	}
+	for i := 0; i < len(d.Classes); i++ {
+		body, ok := maps["class-map "+d.Classes[i]]
+		d.AllMaps = d.AllMaps || !ok
+		for _, t := range body {
+			if len(t) > 2 && t[0] == "match" && t[1] == "class-map" {
+				add(&d.Classes, t[2])
+			}
+			for _, a := range after(t, "access-group", "name") {
+				add(&d.ACLs, a)
+			}
+		}
+	}
 }
 
 // after returns the token following kw, skipping one optional word.
