@@ -15,8 +15,9 @@ import (
 
 // archive configures archive / path on an IOS-XE device whose platform sets
 // archive_path, so its changes can use the device's own revert timer. It is
-// a one-off running-config change, not reverted and not saved; a plan made
-// before it no longer matches the running config.
+// a one-off running-config change, not reverted and not saved; like a
+// confirmed change, its post-hash is what a later save may write. A plan
+// made before it no longer matches the running config.
 func (d Deps) archive(ctx context.Context, sid, client string, in ChangeInput) (ChangeOutput, error) {
 	ev := audit.Event{Event: "archive", MCPSession: sid, Client: client, Reason: cleanReason(in.Reason), Device: in.Device}
 	if err := checkReason(in.Reason); err != nil {
@@ -73,6 +74,8 @@ func (d Deps) archive(ctx context.Context, sid, client string, in ChangeInput) (
 	}
 	ev.PostHash, ev.Outcome = hash.Sum(raw), "ok"
 	d.audit(ev)
+	// a later save (--allow-save) may write exactly this config, nothing else
+	d.Changes.Record(g.dev.Name, ev.PostHash)
 	out.PostHash, out.Outcome = ev.PostHash, "archive_configured"
 	return out, nil
 }
