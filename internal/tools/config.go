@@ -83,7 +83,7 @@ func (d Deps) FetchConfig(ctx context.Context, device, source, ref string) (stri
 // configTarget gates the device and picks its config command, which comes
 // from the platform table, never from the caller.
 func (d Deps) configTarget(ctx context.Context, device, source string) (*gated, string, error) {
-	g, err := d.gate(ctx, device)
+	g, err := d.sshGate(ctx, device)
 	if err != nil {
 		return nil, "", err
 	}

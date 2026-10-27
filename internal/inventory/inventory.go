@@ -217,8 +217,8 @@ func (inv *Inventory) finish(d *Device) {
 	case d.Unreachable != "":
 	case d.Address == "":
 		d.Unreachable = "no source gives an address and resolve_names is off"
-	case d.ReadRef == "":
-		d.Unreachable = "no rule gives a read_ref"
+	case d.ReadRef == "" && d.SNMP == nil: // SNMP-only is fine; the SSH tools refuse it
+		d.Unreachable = "no rule gives a read_ref or snmp"
 	}
 }
 
@@ -291,8 +291,8 @@ func (inv *Inventory) Get(ctx context.Context, name string) (*Device, error) {
 	s := a.Unmap().String()
 	d := &Device{Name: s, Address: s, Port: AdhocPort, Driver: platform.Generic, OptedIn: true, Adhoc: true,
 		Provenance: map[string]string{"address": "adhoc"}}
-	if applyRules(d, inv.f.Rules); d.ReadRef == "" {
-		d.Unreachable = "no adhoc rule gives a read_ref"
+	if applyRules(d, inv.f.Rules); d.ReadRef == "" && d.SNMP == nil {
+		d.Unreachable = "no adhoc rule gives a read_ref or snmp"
 	}
 	return d, nil
 }

@@ -89,7 +89,7 @@ func registerShow(s *mcp.Server, d Deps) {
 		if err != nil {
 			return nil, ShowOutput{}, err
 		}
-		g, err := d.gate(ctx, in.Device)
+		g, err := d.sshGate(ctx, in.Device)
 		if err != nil {
 			return nil, ShowOutput{}, err
 		}

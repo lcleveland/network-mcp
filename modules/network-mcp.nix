@@ -354,7 +354,11 @@ in
           ];
           UMask = "0077";
           SocketBindDeny = "any";
-          SocketBindAllow = "tcp:${toString cfg.port}";
+          # gosnmp binds its client socket to port 0, which `any` denies
+          SocketBindAllow = [
+            "tcp:${toString cfg.port}"
+          ]
+          ++ optional (lib.elem "snmp" cfg.toolGroups) "udp";
         };
       };
 

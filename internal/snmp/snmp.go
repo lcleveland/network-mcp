@@ -8,6 +8,7 @@ import (
 	"context"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/netip"
 	"slices"
@@ -61,15 +62,33 @@ type Target struct {
 }
 
 // Client is one device session; not for concurrent use.
-type Client struct{ g *gosnmp.GoSNMP }
+type Client struct {
+	g      *gosnmp.GoSNMP
+	ctx    context.Context
+	cancel context.CancelCauseFunc
+}
 
-// Dial opens a UDP session. gosnmp does not retry a v3 auth failure (a
-// usmStats report comes back as an error at once).
+// ErrRejected: the agent answered but gosnmp rejected the answer, typically
+// a v3 wrong-digest report, which arrives unauthenticated.
+var ErrRejected = errors.New("the agent's answer failed authentication or decoding; not retried (check the SNMP credentials)")
+
+// Dial opens a UDP session. A request is retried once on timeout only:
+// gosnmp would also retry an answer it rejects, such as a v3 auth failure,
+// so the retry is cancelled when the attempt got an answer.
 func Dial(ctx context.Context, t Target) (*Client, error) {
+	ctx, cancel := context.WithCancelCause(ctx)
+	answered := false
 	g := &gosnmp.GoSNMP{
 		Target: t.Addr.String(), Port: uint16(cmp.Or(t.Port, 161)), Context: ctx,
 		Timeout: t.Timeout, Retries: 1, MaxOids: MaxOIDs,
 		Version: gosnmp.Version2c, Community: t.Cred.Community,
+		OnSent: func(*gosnmp.GoSNMP) { answered = false },
+		OnRecv: func(*gosnmp.GoSNMP) { answered = true },
+		OnRetry: func(*gosnmp.GoSNMP) {
+			if answered {
+				cancel(ErrRejected)
+			}
+		},
 	}
 	if t.Cred.Version == "v3" {
 		g.Version, g.SecurityModel, g.MsgFlags = gosnmp.Version3, gosnmp.UserSecurityModel, gosnmp.AuthPriv
@@ -82,12 +101,21 @@ func Dial(ctx context.Context, t Target) (*Client, error) {
 		}
 	}
 	if err := g.Connect(); err != nil {
+		cancel(nil)
 		return nil, err
 	}
-	return &Client{g}, nil
+	return &Client{g, ctx, cancel}, nil
 }
 
-func (c *Client) Close() { c.g.Close() }
+func (c *Client) Close() { c.g.Close(); c.cancel(nil) }
+
+// err names a cancelled retry instead of gosnmp's bare context error.
+func (c *Client) err(err error) error {
+	if err != nil && errors.Is(context.Cause(c.ctx), ErrRejected) {
+		return ErrRejected
+	}
+	return err
+}
 
 // Allowed refuses a numeric OID inside a denied subtree.
 func Allowed(oid string) error {
@@ -106,7 +134,7 @@ func Within(oid, root string) bool { return oid == root || strings.HasPrefix(oid
 func (c *Client) Get(oids []string) (*Result, error) {
 	pkt, err := c.g.Get(dotted(oids))
 	if err != nil {
-		return nil, err
+		return nil, c.err(err)
 	}
 	if pkt.Error != gosnmp.NoError {
 		return nil, fmt.Errorf("agent answered %s for varbind %d", pkt.Error, pkt.ErrorIndex)
@@ -141,7 +169,7 @@ func (c *Client) Walk(root, after string, bulk bool, maxRows int) (*Result, erro
 			pkt, err = c.g.GetNext(dotted([]string{cur}))
 		}
 		if err != nil {
-			return r, err
+			return r, c.err(err)
 		}
 		if pkt.Error != gosnmp.NoError {
 			return r, fmt.Errorf("agent answered %s", pkt.Error)

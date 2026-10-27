@@ -161,11 +161,16 @@ func TestRules(t *testing.T) {
 	}
 
 	inv = New(config.File{Rules: rules[:4]}, false, src)
-	if d, _ := inv.Get(ctx, "dev3"); d.Unreachable != "no rule gives a read_ref" {
+	if d, _ := inv.Get(ctx, "dev3"); d.Unreachable != "no rule gives a read_ref or snmp" {
 		t.Fatalf("no read ref: %+v", d)
 	}
 	if _, err := Gate(ctx, must(inv.Get(ctx, "dev3")), nil, nil); err == nil || !strings.Contains(err.Error(), "read_ref") {
 		t.Fatalf("gate: %v", err)
+	}
+	// SNMP-only: reachable; the SSH tools refuse it for want of a read_ref
+	inv = New(config.File{Rules: append(rules[:4:4], rule("default", "", "", "", "snmp-default"))}, false, src)
+	if d, _ := inv.Get(ctx, "dev3"); d.Unreachable != "" || d.ReadRef != "" || d.SNMP.Ref != "snmp-default" {
+		t.Fatalf("snmp only: %+v", d)
 	}
 }
 

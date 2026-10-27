@@ -110,7 +110,7 @@ The device file is a list. Names are unique and case-insensitive, and every devi
 - {name: dev2, address: dev2.example.net, port: 2222, platform: cisco_ios, tags: [core]}
 ```
 
-**Inventory.** Sources merge by device name, field by field: the first source in `sources` that sets a field wins, and `provenance` records which one. A device in one source only is kept. Each source's list is cached for 60 s; a failed source contributes nothing (no stale data) and `network_status` shows its error. NetBox is queried with `?tag=<opt_in_tag>`, and the tag is checked again on every object because NetBox ignores filters it does not know. A device with no address (and `resolve_names` off) or no `read_ref` is refused with the reason. A platform the table does not know gets `generic_ssh`.
+**Inventory.** Sources merge by device name, field by field: the first source in `sources` that sets a field wins, and `provenance` records which one. A device in one source only is kept. Each source's list is cached for 60 s; a failed source contributes nothing (no stale data) and `network_status` shows its error. NetBox is queried with `?tag=<opt_in_tag>`, and the tag is checked again on every object because NetBox ignores filters it does not know. A device with no address (and `resolve_names` off) or with neither a `read_ref` nor an `snmp` rule is refused with the reason. A device with only an `snmp` rule is SNMP-only: `network_snmp` reads it, the SSH tools refuse it and `network_status` skips the SSH checks. A platform the table does not know gets `generic_ssh`.
 
 **Rules.** `read_ref`, `write_ref` and `snmp` resolve separately, default < platform (the platform value or its driver) < tag < device; among rules of one level the first listed wins. `write_ref` never falls back to `read_ref`.
 
@@ -190,7 +190,7 @@ claude mcp add --transport http network http://127.0.0.1:8232/mcp \
 
 `nix develop` gives you Go, gopls, govulncheck and nixfmt. `nix flake check` builds the package and runs every test (the fixture guard included), the module evaluation checks and the VM test. `nix fmt` formats the Nix files.
 
-The tests are hermetic: an in-process SSH server (`internal/sshfake`) replays fixture output on loopback, and an in-process SNMP v2c agent (`internal/snmpfake`) answers from the hand-made `.snmprec` files in `testdata/snmp`. There is no vendor image and no lab. The VM test (`nix build .#checks.x86_64-linux.vm-network -L`, under a minute with KVM) runs the module against a real OpenSSH server whose login shell is `cmd/fakecli`, a test-only build of the same fake that is never shipped.
+The tests are hermetic: an in-process SSH server (`internal/sshfake`) replays fixture output on loopback, and an in-process SNMP v2c agent (`internal/snmpfake`) answers from the hand-made `.snmprec` files in `testdata/snmp`. There is no vendor image and no lab. The VM test (`nix build .#checks.x86_64-linux.vm-network -L`, under a minute with KVM) runs the module against a real OpenSSH server whose login shell is `cmd/fakecli`, a test-only build of the same fake that is never shipped, and against net-snmp `snmpd` serving the same `.snmprec` fixtures over v2c and v3 authPriv (SHA-256/AES).
 
 ## Public repo rule
 

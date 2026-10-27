@@ -3,6 +3,8 @@ package snmp_test
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"net"
 	"net/netip"
 	"os"
 	"path/filepath"
@@ -155,6 +157,48 @@ func TestDenied(t *testing.T) {
 	b, _ := json.Marshal(r)
 	if err != nil || len(r.Rows) != 0 || strings.Contains(string(b), "planted") || !strings.Contains(string(b), "2 varbinds") {
 		t.Errorf("walk: %s %v", b, err)
+	}
+}
+
+// A rejected answer (here junk; in the VM a v3 wrong-digest report) is not
+// retried; silence is retried once.
+func TestRetryOnTimeoutOnly(t *testing.T) {
+	for _, tc := range []struct {
+		answer []byte
+		sent   int
+	}{{[]byte("junk"), 1}, {nil, 2}} {
+		pc, err := net.ListenPacket("udp", "127.0.0.1:0")
+		if err != nil {
+			t.Fatal(err)
+		}
+		got := make(chan int, 1)
+		go func() {
+			n, buf := 0, make([]byte, 2048)
+			for {
+				pc.SetReadDeadline(time.Now().Add(time.Second))
+				_, from, err := pc.ReadFrom(buf)
+				if err != nil {
+					got <- n
+					return
+				}
+				if n++; tc.answer != nil {
+					pc.WriteTo(tc.answer, from)
+				}
+			}
+		}()
+		c, err := snmp.Dial(context.Background(), snmp.Target{
+			Addr: netip.MustParseAddr("127.0.0.1"), Port: pc.LocalAddr().(*net.UDPAddr).Port, Timeout: 200 * time.Millisecond,
+			Cred: creds.SNMP{Version: "v2c", Community: community},
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, err = c.Get([]string{"1.3.6.1.2.1.1.5.0"})
+		c.Close()
+		if n := <-got; n != tc.sent || err == nil || (tc.answer != nil) != errors.Is(err, snmp.ErrRejected) {
+			t.Errorf("answer %q: %d requests, %v", tc.answer, n, err)
+		}
+		pc.Close()
 	}
 }
 

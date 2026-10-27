@@ -46,7 +46,7 @@ func registerStatus(s *mcp.Server, d Deps) {
 		Description: "Without device: the server version, enabled tool groups, the health of each inventory source and, " +
 			"with network_change enabled, the pending plan count.\n\n" +
 			"With device: each connect check in order (management-prefix gate, TCP, pinned host key, read-credential auth, " +
-			"prompt detected), stopping at the first failure; then, if the device has SNMP, an SNMP sysUpTime.0 read. It runs no CLI command. " +
+			"prompt detected; only the gate for an SNMP-only device, one with no read_ref), stopping at the first failure; then, if the device has SNMP, an SNMP sysUpTime.0 read. It runs no CLI command. " +
 			"Call this first when network_show fails.\n\n" + UntrustedNote,
 		Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true, OpenWorldHint: new(true)},
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, in StatusInput) (*mcp.CallToolResult, StatusOutput, error) {
@@ -94,6 +94,9 @@ func registerStatus(s *mcp.Server, d Deps) {
 			return nil, out, nil
 		}
 		func() { // SSH; a failure stops the SSH checks only
+			if g.dev.ReadRef == "" { // SNMP-only
+				return
+			}
 			ctx, cancel := context.WithTimeout(ctx, d.Config.RequestTimeout)
 			defer cancel()
 			conn, err := (&net.Dialer{}).DialContext(ctx, "tcp", net.JoinHostPort(g.addr.String(), strconv.Itoa(g.dev.Port)))

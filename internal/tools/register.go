@@ -3,6 +3,7 @@ package tools
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"net/netip"
 
@@ -79,6 +80,17 @@ func (d Deps) gate(ctx context.Context, name string) (*gated, error) {
 	g := &gated{dev: dev, ref: dev.ReadRef, plat: platform.Resolve(dev.Platform, d.Config.File.Platforms)}
 	if g.addr, err = inventory.Gate(ctx, dev, d.Config.File.ManagementPrefixes, d.Lookup); err != nil {
 		d.deny("connect_gate", dev.Name, dev.Address, "", err)
+	}
+	return g, err
+}
+
+// sshGate is gate for the SSH tools, which need a read_ref; an SNMP-only
+// device has none.
+func (d Deps) sshGate(ctx context.Context, name string) (*gated, error) {
+	g, err := d.gate(ctx, name)
+	if err == nil && g.ref == "" {
+		err = fmt.Errorf("no rule gives %s a read_ref, so SSH is disabled for it", g.dev.Name)
+		d.deny("connect_gate", g.dev.Name, g.dev.Address, "", err)
 	}
 	return g, err
 }
