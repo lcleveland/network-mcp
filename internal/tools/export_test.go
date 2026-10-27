@@ -185,4 +185,20 @@ func TestExportAuditFailsClosed(t *testing.T) {
 	}
 }
 
+func TestExportPushFails(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "repo")
+	e := startWith(t, setup{platform: "cisco_iosxe",
+		dests: map[string]config.Destination{"local": {Type: "git", Path: path, Branch: "main", Remote: "https://127.0.0.1:1/r.git", Credential: "push"}},
+		eng: &sshfake.Engine{Hostname: "dev1", Profile: sshfake.IOSXE, Commands: map[string]string{
+			"terminal width 512": "", "terminal length 0": "", "show running-config": "hostname dev1", "show startup-config": "hostname dev1"}}})
+	out, errText := e.call(t, "network_export", exportArgs("dev1"))
+	rs := results(out)
+	if errText != "" || len(rs) != 2 || rs[0]["changed"] != true || len(fmt.Sprint(rs[0]["ref"])) != 40 || !strings.Contains(fmt.Sprint(rs[0]["error"]), "push failed") {
+		t.Fatalf("%v %s", out, errText)
+	}
+	if !strings.Contains(e.audit.String(), `"outcome":"error"`) {
+		t.Fatalf("audit: %s", e.audit)
+	}
+}
+
 func must2[A, B any](a A, _ B) A { return a }

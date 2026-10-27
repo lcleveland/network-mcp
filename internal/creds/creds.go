@@ -4,6 +4,7 @@
 package creds
 
 import (
+	"cmp"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -124,6 +125,52 @@ func ReadSNMP(dir, ref, version string) (SNMP, error) {
 		return SNMP{}, fmt.Errorf("SNMP version %q is refused: use v2c or v3 authPriv", version)
 	}
 	return c, nil
+}
+
+// GitPush loads a git push login: SSH {username?, private_key}, HTTPS
+// {username?, token}. Username defaults to "git".
+func GitPush(dir, ref string, ssh bool) (user, secret string, err error) {
+	var c struct {
+		Username   string `json:"username"`
+		PrivateKey string `json:"private_key"`
+		Token      string `json:"token"`
+	}
+	shape := "{username?, token}"
+	if ssh {
+		shape = "{username?, private_key}"
+	}
+	if err := load(dir, ref, &c, shape); err != nil {
+		return "", "", err
+	}
+	if secret = c.Token; ssh {
+		secret = c.PrivateKey
+	}
+	if secret == "" {
+		return "", "", fmt.Errorf("credential ref %q: needs JSON %s", ref, shape)
+	}
+	return cmp.Or(c.Username, "git"), secret, nil
+}
+
+// S3Key is an S3 access key. Its formatting never shows the secret.
+type S3Key struct {
+	AccessKeyID     string `json:"access_key_id"`
+	SecretAccessKey string `json:"secret_access_key"`
+	SessionToken    string `json:"session_token"`
+}
+
+func (k S3Key) Format(f fmt.State, _ rune) { fmt.Fprint(f, "s3key()") }
+
+// S3 loads an S3 access key from ref, JSON {access_key_id,
+// secret_access_key, session_token?}.
+func S3(dir, ref string) (S3Key, error) {
+	var k S3Key
+	if err := load(dir, ref, &k, "{access_key_id, secret_access_key, session_token?}"); err != nil {
+		return S3Key{}, err
+	}
+	if k.AccessKeyID == "" || k.SecretAccessKey == "" {
+		return S3Key{}, fmt.Errorf("credential ref %q: needs access_key_id and secret_access_key", ref)
+	}
+	return k, nil
 }
 
 func load(dir, ref string, v any, shape string) error {

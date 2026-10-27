@@ -56,7 +56,7 @@ type exportAudit struct {
 func registerExport(s *mcp.Server, d Deps) {
 	sinks := map[string]export.Sink{}
 	for n, dst := range d.Config.File.Destinations {
-		sk, err := export.New(n, dst)
+		sk, err := export.New(n, dst, d.Config.CredentialsDir)
 		if err != nil {
 			panic(err) // config.ParseFile validated every destination
 		}
@@ -78,7 +78,7 @@ func registerExport(s *mcp.Server, d Deps) {
 		Description: "Fetch the running and/or startup config of up to 50 devices and write them to a configured destination " +
 			"as <device>/<kind>.txt, in one batch. Secrets are replaced with <redacted> before anything is written, unless " +
 			"the destination's operator turned that off. A device is written whole or not at all; an unchanged config is not " +
-			"rewritten (changed: false). The result gives per device and kind the ref, changed and sha256, or an error; " +
+			"rewritten (changed: false). The result gives per device and kind the ref (a path, commit or object key), changed and sha256, or an error; " +
 			"never config text. Every export is audit-logged with its reason.\n\n" + UntrustedNote,
 		InputSchema: in,
 		Annotations: &mcp.ToolAnnotations{DestructiveHint: new(false), IdempotentHint: true, OpenWorldHint: new(true)},
@@ -148,7 +148,11 @@ func registerExport(s *mcp.Server, d Deps) {
 		var rs []export.Receipt
 		var perr error
 		if len(arts) > 0 {
-			rs, perr = sink.Put(ctx, arts, in.Reason)
+			msg := in.Reason
+			if det.Session != "" {
+				msg += "\n\nMCP-Session: " + det.Session
+			}
+			rs, perr = sink.Put(ctx, arts, msg)
 		}
 		if perr == nil && len(rs) != len(arts) {
 			perr = fmt.Errorf("sink returned %d receipts for %d configs", len(rs), len(arts))
@@ -158,6 +162,9 @@ func registerExport(s *mcp.Server, d Deps) {
 			if i < len(rs) {
 				r.Destination, r.Ref, r.Changed = rs[i].Destination, rs[i].Ref, rs[i].Changed
 				det.Refs = append(det.Refs, rs[i].Ref)
+				if perr != nil && len(rs) == len(arts) { // all stored, then a later step failed (a push)
+					r.Error = perr.Error()
+				}
 			} else {
 				r.Error = "not written: " + perr.Error()
 			}

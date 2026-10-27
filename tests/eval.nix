@@ -207,17 +207,25 @@ in
   # Export destinations need a writable state directory under the hardened unit.
   module-state-dir =
     let
-      sc =
-        (evalModule (base {
-          settings = {
-            management_prefixes = [ "192.0.2.0/24" ];
-            destinations.local = {
-              type = "dir";
-              path = "/var/lib/network-mcp/export";
-            };
+      c = evalModule (base {
+        settings = {
+          management_prefixes = [ "192.0.2.0/24" ];
+          destinations.local = {
+            type = "dir";
+            path = "/var/lib/network-mcp/export";
           };
-        })).systemd.services.network-mcp.serviceConfig;
+          # no path: must not trip the state-directory assertion
+          destinations.bucket = {
+            type = "s3";
+            region = "us-east-1";
+            bucket = "configs";
+            credential = "s3-key";
+          };
+        };
+      });
+      sc = c.systemd.services.network-mcp.serviceConfig;
     in
+    assert failed c == [ ] || throw (toString (failed c));
     assert
       sc.StateDirectory == "network-mcp" && sc.ProtectSystem == "strict"
       || throw "StateDirectory: ${toString sc.StateDirectory}";

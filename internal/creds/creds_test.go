@@ -86,3 +86,31 @@ func TestToken(t *testing.T) {
 		}
 	}
 }
+
+func TestSinkRefs(t *testing.T) {
+	dir := t.TempDir()
+	for name, body := range map[string]string{
+		"ssh":   `{"private_key":"fake-key-secret"}`,
+		"https": `{"username":"bot","token":"fake-token-secret"}`,
+		"s3":    `{"access_key_id":"AKIAIOSFODNN7EXAMPLE","secret_access_key":"fake-s3-secret"}`,
+		"s3bad": `{"access_key_id":"AKIAIOSFODNN7EXAMPLE"}`,
+	} {
+		os.WriteFile(filepath.Join(dir, name), []byte(body), 0o400)
+	}
+	if u, s, err := GitPush(dir, "ssh", true); err != nil || u != "git" || s != "fake-key-secret" {
+		t.Fatalf("ssh: %q %v", u, err)
+	}
+	if u, s, err := GitPush(dir, "https", false); err != nil || u != "bot" || s != "fake-token-secret" {
+		t.Fatalf("https: %q %v", u, err)
+	}
+	if _, _, err := GitPush(dir, "https", true); err == nil || strings.Contains(err.Error(), "fake") {
+		t.Fatalf("token as ssh key: %v", err)
+	}
+	k, err := S3(dir, "s3")
+	if err != nil || k.SecretAccessKey != "fake-s3-secret" || strings.Contains(fmt.Sprintf("%+v", k), "fake") {
+		t.Fatalf("s3: %v %v", k, err)
+	}
+	if _, err := S3(dir, "s3bad"); err == nil {
+		t.Fatal("s3 without secret accepted")
+	}
+}
