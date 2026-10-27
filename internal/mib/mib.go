@@ -112,7 +112,8 @@ func Name(oid string) string {
 // numeric reports whether s is a dotted list of sub-identifiers.
 func numeric(s string) bool {
 	for p := range strings.SplitSeq(s, ".") {
-		if _, err := strconv.ParseUint(p, 10, 32); err != nil {
+		// canonical only: "018" would slip past the denied-subtree prefix check
+		if _, err := strconv.ParseUint(p, 10, 32); err != nil || len(p) > 1 && p[0] == '0' {
 			return false
 		}
 	}

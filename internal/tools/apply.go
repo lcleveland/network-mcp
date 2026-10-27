@@ -328,14 +328,19 @@ func (d Deps) confirm(ctx context.Context, sid, client string, in ChangeInput) (
 	out := ChangeOutput{Device: c.Plan.Device, ChangeID: c.ID, PostHash: c.PostHash}
 	drv := drivers[c.Plan.Driver]
 	via, err := onDevice(ctx, conn, c, func(s change.Conn) error { return drv.Confirm(ctx, s, c.ID) })
-	if err == nil {
-		if h, herr := runningHash(ctx, conn, g); herr != nil || h != c.PostHash {
-			err = cmp.Or(herr, errors.New("the running config no longer matches post_hash after confirm"))
-		}
-	}
 	ev.Detail = map[string]string{"via": via}
 	if err != nil {
 		return d.failed(ev, out, err)
+	}
+	// the device has confirmed, so the change is no longer pending either way; an
+	// unverified result is not recorded as confirmed, which keeps save refused
+	if h, herr := runningHash(ctx, conn, g); herr != nil || h != c.PostHash {
+		d.Changes.End(c, false)
+		ev.Outcome = "confirmed_unverified"
+		ev.Error = cmp.Or(herr, errors.New("the running config no longer matches post_hash after confirm")).Error()
+		d.audit(ev)
+		out.Outcome = "confirmed_unverified"
+		return out, nil
 	}
 	d.Changes.End(c, true)
 	ev.Outcome = "ok"

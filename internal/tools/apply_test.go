@@ -363,3 +363,23 @@ func TestChangeApplyAuditFailClosed(t *testing.T) {
 		t.Fatalf("confirm with a failing audit log: %q", errText)
 	}
 }
+
+func TestChangeConfirmUnverified(t *testing.T) {
+	e, dev := startChange(t, setup{allowConfig: true, allowSave: true, rules: []config.Rule{writeRule}})
+	id := applied(t, e)["change_id"].(string)
+	dev.DriftOnConfirm = "vlan 99\n"
+	out, errText := e.call(t, "network_change", act("confirm", id))
+	if errText != "" || out["outcome"] != "confirmed_unverified" || dev.Pending() {
+		t.Fatalf("confirm: %v %s", out, errText)
+	}
+	if a := e.audit.String(); !strings.Contains(a, `"event":"confirm","outcome":"confirmed_unverified"`) {
+		t.Fatalf("audit: %s", a)
+	}
+	// no longer pending, and not recorded as confirmed: save stays refused
+	if st, _ := e.call(t, "network_change", map[string]any{"action": "status"}); st["pending"] != nil {
+		t.Fatalf("still pending: %v", st)
+	}
+	if _, errText := e.call(t, "network_change", map[string]any{"action": "save", "device": "dev1", "reason": "r"}); errText == "" {
+		t.Fatal("save after an unverified confirm")
+	}
+}

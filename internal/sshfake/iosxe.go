@@ -16,12 +16,13 @@ import (
 // shortcut: replies and refusals follow Cisco's docs (research #5), not a
 // lab transcript; re-record them on hardware.
 type Device struct {
-	Running      string // must hold "archive" with " path ..." for the revert timer
-	Startup      string
-	Errors       map[string]string // config line -> its % error reply; the line is not applied
-	Locked       bool              // show configuration lock lists an owner
-	SessionBound bool              // configure confirm and revert work only in the session that started the timer
-	Down         bool              // sessions close before the first prompt
+	Running        string // must hold "archive" with " path ..." for the revert timer
+	Startup        string
+	Errors         map[string]string // config line -> its % error reply; the line is not applied
+	Locked         bool              // show configuration lock lists an owner
+	SessionBound   bool              // configure confirm and revert work only in the session that started the timer
+	Down           bool              // sessions close before the first prompt
+	DriftOnConfirm string            // appended to Running when configure confirm succeeds (a concurrent change)
 
 	mu       sync.Mutex
 	sessions int
@@ -124,6 +125,7 @@ func (d *Device) handle(sid int, mode *string, cmd string, ask func(string) erro
 			return out, true
 		}
 		d.timer = 0
+		d.Running += d.DriftOnConfirm
 		return "", true
 	case cmd == "configure revert now":
 		if out := refuse(); out != "" {

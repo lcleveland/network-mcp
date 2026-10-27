@@ -37,7 +37,7 @@ func TestDenied(t *testing.T) {
 		"ena secret x", "li vty 0 4", "snmp community x", "sn community x", "event man applet x", "conf mode excl",
 		"serv int", "radius server x", "radius-ser host 192.0.2.1", "rollb running-config checkpoint x", "feat bash",
 		"do show run", "d show run", "end", "en", "exit", "ex", "conf t", "configure terminal", "CONFIGURE TERMINAL",
-		"banner motd ^C", "key chain x", "boot system flash:x", "rel", "aaa new-model", "tac", "privilege exec level 1 show",
+		"banner motd ^C", "key chain x", "ssh key rsa 2048 force", "no ssh server enable", "role name ops", "hostname dev2", "switchn dev2", "ip domain-n example.net", "ip domain name example.net", "copp profile strict", "control-p", "boot system flash:x", "rel", "aaa new-model", "tac", "privilege exec level 1 show",
 		// syntax
 		"description a\tb", "description a?", "show version | include x", "description a\r", "description a\nusername x",
 		"description café", "", "   ",
@@ -54,8 +54,8 @@ func TestAllowed(t *testing.T) {
 		"interface GigabitEthernet1/0/2", " description uplink to core", " switchport access vlan 10", " no shutdown",
 		"vlan 10", " name users", "router bgp 64496", " address-family ipv4", " neighbor 192.0.2.2 activate",
 		" exit-address-family", "ip route 198.51.100.0 255.255.255.0 192.0.2.1", "spanning-tree portfast default",
-		"ip access-list extended USERS", " permit ip any any", "default interface GigabitEthernet1/0/3", "ip sla 1",
-		"service timestamps log datetime msec", "ip domain name example.net", "ntp server 192.0.2.123",
+		"ip access-list extended USERS", " permit ip any any", "default interface GigabitEthernet1/0/3", "ip sla 1", "route-map RM permit 10", "ip domain-lookup", "ntp server 192.0.2.5", "clock timezone UTC 0 0",
+		"service timestamps log datetime msec", "ntp server 192.0.2.123",
 	}
 	got, err := l.Check(lines, Derived{})
 	if err != nil {

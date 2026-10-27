@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"maps"
 	"slices"
-	"strings"
 
 	"github.com/google/jsonschema-go/jsonschema"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -85,8 +84,8 @@ func registerExport(s *mcp.Server, d Deps) {
 	}, func(ctx context.Context, req *mcp.CallToolRequest, in ExportInput) (*mcp.CallToolResult, ExportOutput, error) {
 		sink := sinks[in.Destination]
 		switch {
-		case strings.TrimSpace(in.Reason) == "":
-			return nil, ExportOutput{}, errors.New("reason is required")
+		case checkReason(in.Reason) != nil:
+			return nil, ExportOutput{}, checkReason(in.Reason)
 		case len(in.Devices) == 0 || len(in.Devices) > MaxExport:
 			return nil, ExportOutput{}, fmt.Errorf("give 1 to %d devices, not %d", MaxExport, len(in.Devices))
 		case len(in.Kinds) == 0:
@@ -106,7 +105,8 @@ func registerExport(s *mcp.Server, d Deps) {
 		}
 		dst := d.Config.File.Destinations[in.Destination]
 		det := exportAudit{Destination: in.Destination, Devices: in.Devices, Kinds: in.Kinds, SHA256: map[string]string{},
-			Redact: dst.Redact == nil || *dst.Redact, Reason: in.Reason, Session: req.Session.ID()}
+			Redact: dst.Redact == nil || *dst.Redact, Reason: output.Cap(output.Sanitize(in.Reason), maxReason)}
+		det.Session, _ = session(req)
 		if !det.Redact {
 			d.Log.Warn("exporting configs unredacted", "destination", in.Destination, "devices", in.Devices)
 		}

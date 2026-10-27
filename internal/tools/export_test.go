@@ -113,6 +113,7 @@ func TestExportRefusals(t *testing.T) {
 	cases := []map[string]any{
 		{"devices": []string{"dev1"}, "kinds": []string{"running"}, "destination": "local"},
 		{"devices": []string{"dev1"}, "kinds": []string{"running"}, "destination": "local", "reason": " "},
+		{"devices": []string{"dev1"}, "kinds": []string{"running"}, "destination": "local", "reason": strings.Repeat("r", 513)},
 		exportArgs(many...),
 		{"devices": []string{"dev1"}, "kinds": []string{"candidate"}, "destination": "local", "reason": "x"},
 		{"devices": []string{"dev1"}, "kinds": []string{"running"}, "destination": "elsewhere", "reason": "x"},

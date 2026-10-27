@@ -24,6 +24,8 @@ var Default = []string{
 	"config-register", "alias", "event manager", "kron", "archive", "parser", "configuration mode", "privilege",
 	"banner", "macro", "ip http", "restconf", "netconf-yang", "ip scp", "ip ftp", "ip tftp", "logging", "license",
 	"key", "tacacs", "radius", "radius-server", "service internal", "gnxi", "checkpoint", "rollback", "feature",
+	// council amendment to #29: session, trust-anchor and prompt protection
+	"ssh", "role", "hostname", "switchname", "ip domain-name", "copp", "control-plane",
 }
 
 // mode lines would leave global config or run exec commands.

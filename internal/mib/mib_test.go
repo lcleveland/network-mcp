@@ -31,7 +31,7 @@ func TestResolve(t *testing.T) {
 			t.Errorf("Name(%q) = %q, want %q", in, got, want)
 		}
 	}
-	for _, bad := range []string{"noSuchThing", "NOPE-MIB::ifDescr", "ifDescr.x", "", "IF-MIB::"} {
+	for _, bad := range []string{"noSuchThing", "NOPE-MIB::ifDescr", "ifDescr.x", "", "IF-MIB::", "1.3.6.1.6.3.018.1", "ifDescr.05"} {
 		if got, err := OID(bad); err == nil {
 			t.Errorf("OID(%q) = %q, want an error", bad, got)
 		}
