@@ -1,11 +1,16 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"golang.org/x/crypto/ssh"
+
+	"github.com/lcleveland/network-mcp/internal/sshfake"
 )
 
 func TestSetup(t *testing.T) {
@@ -44,4 +49,33 @@ func TestSetup(t *testing.T) {
 	if _, err := d.Inv.Get(context.Background(), "dev1"); err != nil {
 		t.Fatal(err)
 	}
+}
+
+func TestHostkey(t *testing.T) {
+	s := sshfake.Start(t, &sshfake.Engine{Hostname: "dev1"}, sshfake.Options{})
+	var b bytes.Buffer
+	if err := hostkey(&b, []string{s.Addr}); err != nil {
+		t.Fatal(err)
+	}
+	// the printed line is exactly the pin the server would need
+	pin := strings.TrimSpace(string(must(os.ReadFile(s.KnownHosts))))
+	out := b.String()
+	if !strings.Contains(out, "# "+ssh.FingerprintSHA256(s.HostKey)+"\n") || !strings.HasSuffix(out, pin+"\n") {
+		t.Fatalf("got %q, want the pin %q", out, pin)
+	}
+	if len(s.Received()) != 0 {
+		t.Fatalf("hostkey reached the device: %q", s.Received())
+	}
+	for _, bad := range [][]string{nil, {"dev1"}, {"192.0.2.1", "extra"}} {
+		if err := hostkey(&b, bad); err == nil {
+			t.Errorf("%q accepted", bad)
+		}
+	}
+}
+
+func must[T any](v T, err error) T {
+	if err != nil {
+		panic(err)
+	}
+	return v
 }

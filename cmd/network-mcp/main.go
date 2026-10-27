@@ -5,18 +5,25 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"net"
 	"net/netip"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
+	"time"
+
+	"golang.org/x/crypto/ssh"
+	"golang.org/x/crypto/ssh/knownhosts"
 
 	"github.com/lcleveland/network-mcp/internal/audit"
 	"github.com/lcleveland/network-mcp/internal/config"
 	"github.com/lcleveland/network-mcp/internal/inventory"
 	"github.com/lcleveland/network-mcp/internal/mib"
 	"github.com/lcleveland/network-mcp/internal/server"
+	"github.com/lcleveland/network-mcp/internal/sshcli"
 	"github.com/lcleveland/network-mcp/internal/tools"
 	"github.com/lcleveland/network-mcp/internal/version"
 )
@@ -29,6 +36,9 @@ func main() {
 }
 
 func run(args []string, getenv func(string) string) error {
+	if len(args) > 0 && args[0] == "hostkey" {
+		return hostkey(os.Stdout, args[1:])
+	}
 	d, err := setup(args, getenv)
 	if d == nil || err != nil {
 		return err
@@ -42,6 +52,38 @@ func run(args []string, getenv func(string) string) error {
 		return server.ServeHTTP(ctx, d.Config, s, d.Log)
 	}
 	return server.ServeStdio(ctx, s)
+}
+
+// hostkey prints the host key ADDR[:PORT] presents, for an operator to check
+// on the device before adding the known_hosts line. It writes no file.
+func hostkey(w io.Writer, args []string) error {
+	if len(args) != 1 {
+		return errors.New("usage: network-mcp hostkey ADDR[:PORT]")
+	}
+	ap, err := netip.ParseAddrPort(args[0])
+	if err != nil {
+		a, err2 := netip.ParseAddr(args[0])
+		if err2 != nil {
+			return fmt.Errorf("hostkey: %q is not an IP address or IP:port", args[0])
+		}
+		ap = netip.AddrPortFrom(a, 22)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	k, err := sshcli.Offered(ctx, ap.Addr(), int(ap.Port()))
+	if err != nil {
+		return fmt.Errorf("hostkey: %w", err)
+	}
+	fmt.Fprintln(w, "# check on the device before pinning; this is what the network presented")
+	fmt.Fprintln(w, "#", ssh.FingerprintSHA256(k))
+	if kd := sshcli.KeyData(k); kd != "" {
+		fmt.Fprintln(w, "# IOS: show crypto key mypubkey rsa, Key Data:")
+		for l := range strings.SplitSeq(kd, "\n") {
+			fmt.Fprintln(w, "#  ", l)
+		}
+	}
+	fmt.Fprintln(w, knownhosts.Line([]string{knownhosts.Normalize(ap.String())}, k))
+	return nil
 }
 
 // setup validates everything startup needs; nil Deps means --version.

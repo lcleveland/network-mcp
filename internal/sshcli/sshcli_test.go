@@ -2,9 +2,14 @@ package sshcli
 
 import (
 	"context"
+	"crypto/ed25519"
+	"crypto/rand"
+	"crypto/rsa"
 	"errors"
 	"fmt"
 	"net/netip"
+	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
@@ -13,6 +18,7 @@ import (
 	"golang.org/x/crypto/ssh"
 
 	"github.com/lcleveland/network-mcp/internal/creds"
+	"github.com/lcleveland/network-mcp/internal/output"
 	"github.com/lcleveland/network-mcp/internal/sshfake"
 )
 
@@ -136,3 +142,40 @@ func TestOpenFailures(t *testing.T) {
 		t.Fatalf("nothing should reach the device: %q", s.Received())
 	}
 }
+
+func TestOffered(t *testing.T) {
+	s := sshfake.Start(t, &sshfake.Engine{Hostname: "dev1"}, sshfake.Options{})
+	k, err := Offered(context.Background(), netip.MustParseAddr(s.Host), s.Port)
+	if err != nil || ssh.FingerprintSHA256(k) != ssh.FingerprintSHA256(s.HostKey) {
+		t.Fatalf("%v %v", k, err)
+	}
+	if len(s.Received()) != 0 {
+		t.Fatalf("Offered reached the device: %q", s.Received())
+	}
+
+	// unpinned: readable despite the redactor, and still a host key failure
+	tg := target(s, "mcp")
+	tg.KnownHosts = filepath.Join(t.TempDir(), "empty")
+	os.WriteFile(tg.KnownHosts, nil, 0o600)
+	_, err = Open(context.Background(), tg)
+	if oe := (*OpenError)(nil); !errors.As(err, &oe) || oe.Stage != StageHostKey || redacted(err.Error()) {
+		t.Fatalf("unpinned: %v", err)
+	}
+}
+
+func TestKeyData(t *testing.T) {
+	priv, _ := rsa.GenerateKey(rand.Reader, 2048)
+	k, _ := ssh.NewPublicKey(&priv.PublicKey)
+	lines := strings.Split(KeyData(k), "\n")
+	// a 2048-bit key's DER header, as IOS prints it
+	if lines[0] != "30820122 300D0609 2A864886 F70D0101 01050003 82010F00 3082010A 02820101" ||
+		len(lines) != 10 || !strings.HasSuffix(lines[9], "020301 0001") {
+		t.Fatalf("%q", lines)
+	}
+	ed, _ := ssh.NewPublicKey(ed25519.PublicKey(make([]byte, ed25519.PublicKeySize)))
+	if KeyData(ed) != "" {
+		t.Fatal("non-RSA key got IOS key data")
+	}
+}
+
+func redacted(s string) bool { r, n := output.Redact(s); return n > 0 || r != s }
