@@ -28,21 +28,40 @@ func ValidRef(name string) bool {
 	return refName.MatchString(name) && name != "." && name != ".."
 }
 
-// Read loads ref from dir. Errors never include the file contents.
+// Read loads an SSH login from ref. Errors never include the file contents.
 func Read(dir, ref string) (Cred, error) {
-	if !ValidRef(ref) {
-		return Cred{}, fmt.Errorf("credential ref %q: names may use only letters, digits, . _ -", ref)
-	}
-	b, err := os.ReadFile(filepath.Join(dir, ref))
-	if err != nil {
-		return Cred{}, fmt.Errorf("credential ref %q: %w", ref, errors.Unwrap(err))
-	}
 	var c Cred
-	if json.Unmarshal(b, &c) != nil {
-		return Cred{}, fmt.Errorf("credential ref %q: not JSON {username, password} or {username, private_key}", ref)
+	if err := load(dir, ref, &c, "{username, password} or {username, private_key}"); err != nil {
+		return Cred{}, err
 	}
 	if c.Username == "" || (c.Password == "") == (c.PrivateKey == "") {
 		return Cred{}, fmt.Errorf("credential ref %q: needs username and exactly one of password or private_key", ref)
 	}
 	return c, nil
+}
+
+// Token loads an API token from ref, JSON {token}.
+func Token(dir, ref string) (string, error) {
+	var t struct{ Token string }
+	if err := load(dir, ref, &t, "{token}"); err != nil {
+		return "", err
+	}
+	if t.Token == "" {
+		return "", fmt.Errorf("credential ref %q: token is empty", ref)
+	}
+	return t.Token, nil
+}
+
+func load(dir, ref string, v any, shape string) error {
+	if !ValidRef(ref) {
+		return fmt.Errorf("credential ref %q: names may use only letters, digits, . _ -", ref)
+	}
+	b, err := os.ReadFile(filepath.Join(dir, ref))
+	if err != nil {
+		return fmt.Errorf("credential ref %q: %w", ref, errors.Unwrap(err))
+	}
+	if json.Unmarshal(b, v) != nil {
+		return fmt.Errorf("credential ref %q: not JSON %s", ref, shape)
+	}
+	return nil
 }

@@ -53,12 +53,12 @@ func setup(args []string, getenv func(string) string) (*tools.Deps, error) {
 		fmt.Println(version.Version)
 		return nil, nil
 	}
-	inv, err := inventory.Load(cfg.File.Sources)
+	inv, err := inventory.Load(cfg)
 	if err != nil {
 		return nil, err
 	}
 	// every device is SSH until other drivers exist
-	if inv.Len() > 0 && cfg.KnownHosts == "" {
+	if (len(cfg.File.Sources) > 0 || cfg.AllowAdhoc) && cfg.KnownHosts == "" {
 		return nil, errors.New("--known-hosts (or NETWORK_MCP_KNOWN_HOSTS) is required when any device uses SSH")
 	}
 	// stdout belongs to the stdio transport; logs and audit go to stderr.

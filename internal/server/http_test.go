@@ -29,7 +29,7 @@ func TestHTTP(t *testing.T) {
 	var logs bytes.Buffer
 	log := slog.New(slog.NewTextHandler(&logs, &slog.HandlerOptions{Level: slog.LevelDebug}))
 	cfg := &config.Config{Path: "/mcp", HTTPAuthToken: "s3cret-token-value", RequestTimeout: time.Second}
-	inv, _ := inventory.Load(nil)
+	inv, _ := inventory.Load(cfg)
 	s, _ := New(tools.Deps{Config: cfg, Inv: inv, Log: log})
 	srv := httptest.NewServer(Handler(cfg, s, log))
 	defer srv.Close()

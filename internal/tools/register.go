@@ -3,8 +3,6 @@ package tools
 
 import (
 	"context"
-	"errors"
-	"fmt"
 	"log/slog"
 	"net/netip"
 
@@ -52,21 +50,17 @@ type gated struct {
 }
 
 // gate looks a device up and runs the connect gates. Refusals are audited.
+// A device that was found but refused comes back with the error, addr unset.
 func (d Deps) gate(ctx context.Context, name string) (*gated, error) {
-	dev, ok := d.Inv.Get(name)
-	if !ok {
-		return nil, fmt.Errorf("unknown device %q; network_status lists the inventory sources", name)
-	}
-	addr, err := inventory.Gate(ctx, dev, d.Config.File.ManagementPrefixes, d.Lookup)
+	dev, err := d.Inv.Get(ctx, name)
 	if err != nil {
-		d.deny("connect_gate", dev.Name, dev.Address, "", err)
 		return nil, err
 	}
-	ref := d.Config.File.Credentials.Default.ReadRef
-	if ref == "" {
-		return nil, errors.New("no read credential configured (credentials.default.read_ref)")
+	g := &gated{dev: dev, ref: dev.ReadRef, plat: platform.Resolve(dev.Platform, d.Config.File.Platforms)}
+	if g.addr, err = inventory.Gate(ctx, dev, d.Config.File.ManagementPrefixes, d.Lookup); err != nil {
+		d.deny("connect_gate", dev.Name, dev.Address, "", err)
 	}
-	return &gated{dev, addr, ref, platform.Resolve(dev.Platform, d.Config.File.Platforms)}, nil
+	return g, err
 }
 
 // open reads the credential fresh and connects.

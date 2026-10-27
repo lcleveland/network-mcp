@@ -48,6 +48,7 @@ let
     "--log-level"
     cfg.logLevel
   ]
+  ++ optional cfg.allowAdhoc "--allow-adhoc"
   ++ optionals (cfg.knownHostsFile != null) [
     "--known-hosts"
     cfg.knownHostsFile
@@ -72,7 +73,7 @@ in
         {
           management_prefixes = [ "192.0.2.0/24" ];
           sources = [ { name = "file"; type = "file"; path = "/etc/network-mcp/devices.yaml"; } ];
-          credentials.default.read_ref = "ssh-read";
+          rules = [ { match = "default"; read_ref = "ssh-read"; } ];
         }
       '';
       description = ''
@@ -109,6 +110,15 @@ in
       type = types.listOf (types.enum groups);
       default = groups;
       description = "Tool groups to register. `core` is always on.";
+    };
+
+    allowAdhoc = mkOption {
+      type = types.bool;
+      default = false;
+      description = ''
+        Accept an IP literal inside `settings.adhoc_prefixes` as a device
+        (generic read-only driver, credentials from the `adhoc` rule).
+      '';
     };
 
     listenAddress = mkOption {

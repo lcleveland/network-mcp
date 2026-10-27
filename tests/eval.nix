@@ -78,6 +78,7 @@ in
     check "--config /nix/store/" cmd
     check "--tool-groups core,cli" cmd
     refute "--known-hosts" cmd
+    refute "--allow-adhoc" cmd
     refute "http-auth-token" creds
   '';
 
@@ -94,11 +95,12 @@ in
         knownHostsFile = "/etc/network-mcp/known_hosts";
         toolGroups = [ "core" ];
         requestTimeout = "10s";
+        allowAdhoc = true;
         logLevel = "debug";
         extraArgs = [ "--stdio=false" ];
         settings = {
           management_prefixes = [ "192.0.2.0/24" ];
-          credentials.default.read_ref = "ssh-read";
+          rules = [ { match = "default"; read_ref = "ssh-read"; } ];
         };
       }
       ''
@@ -106,6 +108,7 @@ in
         check "--known-hosts /etc/network-mcp/known_hosts" cmd
         check "--tool-groups core " cmd
         check "--request-timeout 10s" cmd
+        check "--allow-adhoc" cmd
         check "--log-level debug" cmd
         check "--stdio=false" cmd
         check "http-auth-token:/run/secrets/bearer" creds

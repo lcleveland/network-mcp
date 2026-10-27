@@ -38,3 +38,18 @@ func TestRead(t *testing.T) {
 		}
 	}
 }
+
+func TestToken(t *testing.T) {
+	dir := t.TempDir()
+	os.WriteFile(filepath.Join(dir, "nb"), []byte(`{"token":"tok-secret"}`), 0o400)
+	os.WriteFile(filepath.Join(dir, "empty"), []byte(`{}`), 0o400)
+	os.WriteFile(filepath.Join(dir, "junk"), []byte(`tok-secret`), 0o400)
+	if tok, err := Token(dir, "nb"); err != nil || tok != "tok-secret" {
+		t.Fatalf("%q %v", tok, err)
+	}
+	for _, ref := range []string{"empty", "junk", "missing", "../nb"} {
+		if _, err := Token(dir, ref); err == nil || strings.Contains(err.Error(), "tok-secret") {
+			t.Errorf("Token(%q): %v", ref, err)
+		}
+	}
+}
