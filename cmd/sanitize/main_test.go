@@ -59,3 +59,16 @@ core-sw1#
 		t.Fatal("not deterministic or not idempotent")
 	}
 }
+
+func TestDeny(t *testing.T) {
+	terms := []string{"acme", "ACME-CORE-7", "FDO1234ABCD"}
+	in := `{"host_name": "acme-core-7", "proc_board_id": "fdo1234abcd"}` + "\ndescription to Acme HQ\n"
+	want := `{"host_name": "term2", "proc_board_id": "term3"}` + "\ndescription to term1 HQ\n"
+	if got := deny(in, terms); got != want {
+		t.Fatalf("got %q", got)
+	}
+	// placeholders survive the rest of sanitize, and nothing is left to deny
+	if got := sanitize(deny("hostname ACME-CORE-7\n", terms)); got != "hostname term2\n" || len(fixtures.Denied(got, terms)) != 0 {
+		t.Fatalf("got %q", got)
+	}
+}

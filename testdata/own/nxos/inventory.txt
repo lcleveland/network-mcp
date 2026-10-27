@@ -1,0 +1,62 @@
+{
+  "TABLE_inv": {
+    "ROW_inv": [
+      {
+        "desc": "\"Nexus9000 term47 chassis\"",
+        "name": "\"Chassis\"",
+        "productid": "term46",
+        "serialnum": "term38",
+        "vendorid": "V05"
+      },
+      {
+        "desc": "\"24x10/25G + 6x40/100G Ethernet Module\"",
+        "name": "\"Slot 1\"",
+        "productid": "term46",
+        "serialnum": "term38",
+        "vendorid": "V05"
+      },
+      {
+        "desc": "\"Nexus9000 term47 chassis Power Supply\"",
+        "name": "\"Power Supply 1\"",
+        "productid": "term49",
+        "serialnum": "term42",
+        "vendorid": "V01"
+      },
+      {
+        "desc": "\"Nexus9000 term47 chassis Power Supply\"",
+        "name": "\"Power Supply 2\"",
+        "productid": "term49",
+        "serialnum": "term43",
+        "vendorid": "V01"
+      },
+      {
+        "desc": "\"Nexus9000 term47 chassis Fan Module\"",
+        "name": "\"Fan 1\"",
+        "productid": "term48",
+        "serialnum": "N/A",
+        "vendorid": "V01"
+      },
+      {
+        "desc": "\"Nexus9000 term47 chassis Fan Module\"",
+        "name": "\"Fan 2\"",
+        "productid": "term48",
+        "serialnum": "N/A",
+        "vendorid": "V01"
+      },
+      {
+        "desc": "\"Nexus9000 term47 chassis Fan Module\"",
+        "name": "\"Fan 3\"",
+        "productid": "term48",
+        "serialnum": "N/A",
+        "vendorid": "V01"
+      },
+      {
+        "desc": "\"Nexus9000 term47 chassis Fan Module\"",
+        "name": "\"Fan 4\"",
+        "productid": "term48",
+        "serialnum": "N/A",
+        "vendorid": "V01"
+      }
+    ]
+  }
+}

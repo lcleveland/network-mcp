@@ -1,0 +1,11 @@
+NAME: "c92xxL Stack", DESCR: "c92xxL Stack"
+PID: term51     , VID: V02  , SN: term40
+
+NAME: "Switch 1", DESCR: "term51"
+PID: term51     , VID: V02  , SN: term40
+
+NAME: "Switch 1 - Power Supply B", DESCR: "Switch 1 - Power Supply B"
+PID: term52      , VID: V02  , SN: term44
+
+NAME: "Te1/1/4", DESCR: "SFP-10GBase-SR"
+PID: MODEL1          , VID: V03  , SN: SERIAL1

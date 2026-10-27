@@ -1,0 +1,214 @@
+{
+  "TABLE_cdp_neighbor_detail_info": {
+    "ROW_cdp_neighbor_detail_info": [
+      {
+        "capability": [
+          "switch",
+          "host"
+        ],
+        "device_id": "term23",
+        "ifindex": "436208640",
+        "intf_id": "Ethernet1/3",
+        "local_intf_mac": "00:00:5e:00:53:00",
+        "mtu": "0",
+        "num_mgmtaddr": "0",
+        "numaddr": "1",
+        "platform_id": "Linux",
+        "port_id": "eth3",
+        "remote_intf_mac": "00:00:5e:00:53:01",
+        "ttl": "101",
+        "v4addr": "192.0.2.1",
+        "version": "term57AHV",
+        "version_no": "v2"
+      },
+      {
+        "capability": [
+          "switch",
+          "host"
+        ],
+        "device_id": "term23",
+        "ifindex": "436209152",
+        "intf_id": "Ethernet1/4",
+        "local_intf_mac": "00:00:5e:00:53:02",
+        "mtu": "0",
+        "num_mgmtaddr": "0",
+        "numaddr": "1",
+        "platform_id": "Linux",
+        "port_id": "eth2",
+        "remote_intf_mac": "00:00:5e:00:53:03",
+        "ttl": "101",
+        "v4addr": "192.0.2.1",
+        "version": "term57AHV",
+        "version_no": "v2"
+      },
+      {
+        "capability": [
+          "switch",
+          "host"
+        ],
+        "device_id": "term22",
+        "ifindex": "436209664",
+        "intf_id": "Ethernet1/5",
+        "local_intf_mac": "00:00:5e:00:53:04",
+        "mtu": "0",
+        "num_mgmtaddr": "0",
+        "numaddr": "1",
+        "platform_id": "Linux",
+        "port_id": "eth3",
+        "remote_intf_mac": "00:00:5e:00:53:05",
+        "ttl": "99",
+        "v4addr": "192.0.2.2",
+        "version": "term57AHV",
+        "version_no": "v2"
+      },
+      {
+        "capability": [
+          "switch",
+          "host"
+        ],
+        "device_id": "term22",
+        "ifindex": "436210176",
+        "intf_id": "Ethernet1/6",
+        "local_intf_mac": "00:00:5e:00:53:06",
+        "mtu": "0",
+        "num_mgmtaddr": "0",
+        "numaddr": "1",
+        "platform_id": "Linux",
+        "port_id": "eth2",
+        "remote_intf_mac": "00:00:5e:00:53:07",
+        "ttl": "99",
+        "v4addr": "192.0.2.2",
+        "version": "term57AHV",
+        "version_no": "v2"
+      },
+      {
+        "capability": [
+          "switch",
+          "host"
+        ],
+        "device_id": "term21",
+        "ifindex": "436210688",
+        "intf_id": "Ethernet1/7",
+        "local_intf_mac": "00:00:5e:00:53:08",
+        "mtu": "0",
+        "num_mgmtaddr": "0",
+        "numaddr": "1",
+        "platform_id": "Linux",
+        "port_id": "eth3",
+        "remote_intf_mac": "00:00:5e:00:53:09",
+        "ttl": "99",
+        "v4addr": "192.0.2.3",
+        "version": "term57AHV",
+        "version_no": "v2"
+      },
+      {
+        "capability": [
+          "switch",
+          "host"
+        ],
+        "device_id": "term21",
+        "ifindex": "436211200",
+        "intf_id": "Ethernet1/8",
+        "local_intf_mac": "00:00:5e:00:53:0a",
+        "mtu": "0",
+        "num_mgmtaddr": "0",
+        "numaddr": "1",
+        "platform_id": "Linux",
+        "port_id": "eth2",
+        "remote_intf_mac": "00:00:5e:00:53:0b",
+        "ttl": "99",
+        "v4addr": "192.0.2.3",
+        "version": "term57AHV",
+        "version_no": "v2"
+      },
+      {
+        "capability": [
+          "switch",
+          "host"
+        ],
+        "device_id": "term24",
+        "ifindex": "436211712",
+        "intf_id": "Ethernet1/9",
+        "local_intf_mac": "00:00:5e:00:53:0c",
+        "mtu": "0",
+        "num_mgmtaddr": "0",
+        "numaddr": "1",
+        "platform_id": "Linux",
+        "port_id": "eth0",
+        "remote_intf_mac": "00:00:5e:00:53:0d",
+        "ttl": "96",
+        "v4addr": "192.0.2.4",
+        "version": "term57AHV",
+        "version_no": "v2"
+      },
+      {
+        "capability": [
+          "switch",
+          "host"
+        ],
+        "device_id": "term24",
+        "ifindex": "436212736",
+        "intf_id": "Ethernet1/11",
+        "local_intf_mac": "00:00:5e:00:53:0e",
+        "mtu": "0",
+        "num_mgmtaddr": "0",
+        "numaddr": "1",
+        "platform_id": "Linux",
+        "port_id": "eth1",
+        "remote_intf_mac": "00:00:5e:00:53:0f",
+        "ttl": "96",
+        "v4addr": "192.0.2.4",
+        "version": "term57AHV",
+        "version_no": "v2"
+      },
+      {
+        "capability": [
+          "switch",
+          "IGMP_cnd_filtering"
+        ],
+        "device_id": "name1.example.com",
+        "duplexmode": "full",
+        "ifindex": "436230656",
+        "intf_id": "Ethernet1/46",
+        "local_intf_mac": "00:00:5e:00:53:10",
+        "mtu": "0",
+        "nativevlan": "1",
+        "num_mgmtaddr": "1",
+        "numaddr": "1",
+        "platform_id": "cisco term50",
+        "port_id": "TenGigabitEthernet1/1/8",
+        "remote_intf_mac": "00:00:5e:00:53:11",
+        "ttl": "177",
+        "v4addr": "192.0.2.5",
+        "v4mgmtaddr": "192.0.2.5",
+        "version_no": "v2",
+        "vtpname": "null"
+      },
+      {
+        "capability": [
+          "router",
+          "switch",
+          "IGMP_cnd_filtering",
+          "Supports-STP-Dispute"
+        ],
+        "device_id": "name2.example.com(term39)",
+        "duplexmode": "full",
+        "ifindex": "436231168",
+        "intf_id": "Ethernet1/47",
+        "local_intf_mac": "00:00:5e:00:53:12",
+        "mtu": "1500",
+        "nativevlan": "1",
+        "num_mgmtaddr": "0",
+        "numaddr": "1",
+        "platform_id": "term46",
+        "port_id": "Ethernet1/47",
+        "remote_intf_mac": "00:00:5e:00:53:13",
+        "sysname": "term20",
+        "ttl": "123",
+        "v4addr": "192.0.2.6",
+        "version": "Cisco Nexus Operating System (NX-OS) Software, Version term53",
+        "version_no": "v2"
+      }
+    ]
+  }
+}

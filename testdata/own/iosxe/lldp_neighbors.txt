@@ -1,0 +1,100 @@
+------------------------------------------------
+Local Intf: Gi1/0/5
+Chassis id: 192.0.2.1
+Port id: 0000.5e00.5300
+Port Description: WAN PORT
+System Name: SIP-T33G
+
+System Description: 
+192.0.2.2
+
+Time remaining: 176 seconds
+System Capabilities: B,T
+Enabled Capabilities: B,T
+Management Addresses - not advertised
+Auto Negotiation - supported, enabled
+Physical media capabilities:
+    1000baseT(FD)
+    100base-TX(FD)
+    100base-TX(HD)
+    10base-T(FD)
+    10base-T(HD)
+Media Attachment Unit type: 30
+Vlan ID: - not advertised
+
+MED Information:
+
+    MED Codes:
+          (NP) Network Policy, (LI) Location Identification
+          (PS) Power Source Entity, (PD) Power Device
+          (IN) Inventory
+
+    H/W revision: 192.0.2.3.2.0.16
+    F/W revision: 192.0.2.2
+    S/W revision: 192.0.2.2
+    Serial number: SERIAL1
+    Manufacturer: Yealink
+    Model: T33
+    Capabilities: NP, PD, IN
+    Device type: Endpoint Class III
+    Network Policy(Voice): VLAN 50, tagged, Layer-2 priority: 5, DSCP: 46
+    PD device, Power source: PSE, Power Priority: High, Wattage: 3.8
+    Location - not advertised
+
+------------------------------------------------
+Local Intf: Te1/1/4
+Chassis id: 0000.5e00.5301
+Port id: Te2/1/8
+Port Description: TenGigabitEthernet2/1/8
+System Name: name1.example.com
+
+System Description: 
+Cisco IOS Software [Amsterdam], Catalyst MODEL1 Switch Software (fw2), Version fw1, RELEASE SOFTWARE (fc3)
+Technical Support: http://name2.example.com/techsupport
+Copyright (c) 1986-2021 by Cisco Systems, Inc.
+
+Time remaining: 109 seconds
+System Capabilities: B,R
+Enabled Capabilities: B
+Management Addresses:
+    IP: 192.0.2.4
+Auto Negotiation - not supported
+Physical media capabilities:
+    Other/unknown
+Media Attachment Unit type: 31
+Vlan ID: 1
+
+------------------------------------------------
+Local Intf: Gi1/0/6
+Chassis id: 0000.5e00.5302
+Port id: 0000.5e00.5302
+Port Description - not advertised
+System Name - not advertised
+System Description - not advertised
+
+Time remaining: 3254 seconds
+System Capabilities - not advertised
+Enabled Capabilities - not advertised
+Management Addresses - not advertised
+Auto Negotiation - supported, enabled
+Physical media capabilities:
+    1000baseT(FD)
+Media Attachment Unit type - not advertised
+Vlan ID: - not advertised
+
+MED Information:
+
+    MED Codes:
+          (NP) Network Policy, (LI) Location Identification
+          (PS) Power Source Entity, (PD) Power Device
+          (IN) Inventory
+
+    Inventory information - not advertised
+    Capabilities: 
+    Device type: Endpoint Class I
+    Network Policies - not advertised
+    Power requirements - not advertised
+    Location - not advertised
+
+
+Total entries displayed: 3

@@ -1,0 +1,37 @@
+-------------------------
+Device ID: name1.example.com
+Entry address(es): 
+  IP address: 192.0.2.1
+Platform: cisco term50,  Capabilities: Switch IGMP 
+Interface: TenGigabitEthernet1/1/4,  Port ID (outgoing port): TenGigabitEthernet2/1/8
+Holdtime : 159 sec
+
+Version :
+Cisco IOS Software [Amsterdam], Catalyst MODEL1 Switch Software (fw2), Version fw1, RELEASE SOFTWARE (fc3)
+Technical Support: http://name2.example.com/techsupport
+Copyright (c) 1986-2021 by Cisco Systems, Inc.
+
+advertisement version: 2
+VTP Management Domain: ''
+Native VLAN: 1
+Duplex: full
+Management address(es): 
+  IP address: 192.0.2.1
+
+-------------------------
+Device ID: term41
+Entry address(es): 
+  IP address: 192.0.2.2
+Platform: T33,  Capabilities: Host Phone 
+Interface: GigabitEthernet1/0/5,  Port ID (outgoing port): WAN PORT
+Holdtime : 178 sec
+
+Version :
+192.0.2.3
+
+advertisement version: 2
+Duplex: full
+Power drawn: 3.800 Watts
+
+
+Total cdp entries displayed : 2

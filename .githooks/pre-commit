@@ -1,0 +1,16 @@
+#!/bin/sh
+# Blocks a commit whose added lines contain a term from the local, gitignored
+# .fixture-denylist (the operator's real hostnames, domains, serials). It
+# names no term, so its output is safe to paste. Opt in once per clone:
+#   git config core.hooksPath .githooks
+list="$(git rev-parse --show-toplevel)/.fixture-denylist"
+[ -f "$list" ] || exit 0
+terms=$(grep -v '^[[:space:]]*#' "$list" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//' | grep -v '^$')
+[ -n "$terms" ] || exit 0
+for f in $(git diff --cached --name-only --diff-filter=ACMR); do
+	if git diff --cached -U0 --no-color -- "$f" | grep '^+' | grep -v '^+++' | grep -iqF -e "$terms"; then
+		echo "pre-commit: $f adds a term from .fixture-denylist; run cmd/sanitize or edit it out" >&2
+		bad=1
+	fi
+done
+[ -z "$bad" ]

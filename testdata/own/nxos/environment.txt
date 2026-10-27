@@ -1,0 +1,128 @@
+{
+  "TABLE_tempinfo": {
+    "ROW_tempinfo": [
+      {
+        "alarmstatus": "Ok",
+        "curtemp": "20",
+        "majthres": "80",
+        "minthres": "70",
+        "sensor": "FRONT",
+        "tempmod": "1"
+      },
+      {
+        "alarmstatus": "Ok",
+        "curtemp": "20",
+        "majthres": "70",
+        "minthres": "42",
+        "sensor": "BACK",
+        "tempmod": "1"
+      },
+      {
+        "alarmstatus": "Ok",
+        "curtemp": "36",
+        "majthres": "90",
+        "minthres": "80",
+        "sensor": "CPU",
+        "tempmod": "1"
+      },
+      {
+        "alarmstatus": "Ok",
+        "curtemp": "43",
+        "majthres": "100",
+        "minthres": "90",
+        "sensor": "Sugarbowl",
+        "tempmod": "1"
+      }
+    ]
+  },
+  "fandetails": {
+    "TABLE_fan_zone_speed": {
+      "ROW_fan_zone_speed": {
+        "zone": "1",
+        "zonespeed": "0x80"
+      }
+    },
+    "TABLE_faninfo": {
+      "ROW_faninfo": [
+        {
+          "fandir": "back-to-front",
+          "fanhwver": "--",
+          "fanmodel": "term48",
+          "fanname": "Fan1(sys_fan1)",
+          "fanstatus": "Ok"
+        },
+        {
+          "fandir": "back-to-front",
+          "fanhwver": "--",
+          "fanmodel": "term48",
+          "fanname": "Fan2(sys_fan2)",
+          "fanstatus": "Ok"
+        },
+        {
+          "fandir": "back-to-front",
+          "fanhwver": "--",
+          "fanmodel": "term48",
+          "fanname": "Fan3(sys_fan3)",
+          "fanstatus": "Ok"
+        },
+        {
+          "fandir": "back-to-front",
+          "fanhwver": "--",
+          "fanmodel": "term48",
+          "fanname": "Fan4(sys_fan4)",
+          "fanstatus": "Ok"
+        },
+        {
+          "fandir": "back-to-front",
+          "fanhwver": "--",
+          "fanmodel": "--",
+          "fanname": "Fan_in_PS1",
+          "fanstatus": "Ok"
+        },
+        {
+          "fandir": "back-to-front",
+          "fanhwver": "--",
+          "fanmodel": "--",
+          "fanname": "Fan_in_PS2",
+          "fanstatus": "Ok"
+        }
+      ]
+    },
+    "fan_filter_status": "NotSupported"
+  },
+  "powersup": {
+    "TABLE_psinfo": {
+      "ROW_psinfo": [
+        {
+          "actual_input": "81 W",
+          "actual_out": "66 W",
+          "ps_status": "Ok",
+          "psmodel": "term49",
+          "psnum": "1",
+          "tot_capa": "500 W"
+        },
+        {
+          "actual_input": "78 W",
+          "actual_out": "67 W",
+          "ps_status": "Ok",
+          "psmodel": "term49",
+          "psnum": "2",
+          "tot_capa": "500 W"
+        }
+      ]
+    },
+    "power_summary": {
+      "available_pow": "N/A",
+      "cumulative_power": "1000.00 W",
+      "ps_oper_mode": "PS-Redundant",
+      "ps_redun_mode": "PS-Redundant",
+      "tot_gridA_capacity": "500.00 W",
+      "tot_gridB_capacity": "500.00 W",
+      "tot_pow_alloc_budgeted": "N/A",
+      "tot_pow_capacity": "500.00 W",
+      "tot_pow_input_actual_draw": "159.00 W",
+      "tot_pow_out_actual_draw": "134.00 W"
+    },
+    "voltage_level": "12"
+  }
+}

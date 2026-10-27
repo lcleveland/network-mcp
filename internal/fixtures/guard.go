@@ -4,9 +4,12 @@ package fixtures
 
 import (
 	"encoding/hex"
+	"errors"
 	"fmt"
+	"io/fs"
 	"net"
 	"net/netip"
+	"os"
 	"regexp"
 	"strings"
 )
@@ -55,6 +58,42 @@ func Violations(text string) []string {
 	for _, m := range Secret.FindAllStringSubmatch(text, -1) {
 		if v := m[2]; !(strings.HasPrefix(v, "<") && strings.HasSuffix(v, ">")) {
 			out = append(out, fmt.Sprintf("secret line %q", m[0]))
+		}
+	}
+	return out
+}
+
+// DenylistFile is the operator's local list of real names (hostnames,
+// domains, sites, serials, models, people) that the patterns above cannot
+// recognise. It is gitignored: real names are never written into the repo.
+const DenylistFile = ".fixture-denylist"
+
+// Denylist reads a denylist: one literal per line, # comments and blank
+// lines skipped. A missing file is an empty list.
+func Denylist(path string) ([]string, error) {
+	b, err := os.ReadFile(path)
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	var terms []string
+	for l := range strings.Lines(string(b)) {
+		if l = strings.TrimSpace(l); l != "" && !strings.HasPrefix(l, "#") {
+			terms = append(terms, l)
+		}
+	}
+	return terms, nil
+}
+
+// Denied lists the denylisted terms text contains, ignoring case.
+func Denied(text string, terms []string) []string {
+	var out []string
+	lower := strings.ToLower(text)
+	for _, t := range terms {
+		if strings.Contains(lower, strings.ToLower(t)) {
+			out = append(out, "denylisted "+t)
 		}
 	}
 	return out

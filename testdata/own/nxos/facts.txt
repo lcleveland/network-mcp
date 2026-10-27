@@ -1,0 +1,35 @@
+{
+  "TABLE_package_list": {
+    "ROW_package_list": {
+      "package_id": null
+    }
+  },
+  "bios_cmpl_time": "06/11/2019",
+  "bios_ver_str": "07.66",
+  "bootflash_size": "53298520",
+  "chassis_id": "Nexus9000 term47 chassis",
+  "cpu_name": "Intel(R) Xeon(R) CPU  @ 1.80GHz",
+  "header_str": "Cisco Nexus Operating System (NX-OS) Software\nTAC support: http://name1.example.com/tac\nCopyright (C) 2002-2019, Cisco and/or its affiliates.\nAll rights reserved.\nThe copyrights to certain works contained in this software are\nowned by other third parties and used and distributed under their own\nlicenses, such as open source.  This software is provided \"as is,\" and unless\notherwise stated, there is no warranty, express or implied, including but not\nlimited to warranties of merchantability and fitness for a particular purpose.\nCertain components of this software are licensed under\nthe GNU General Public License (GPL) version fw1 or \nGNU General Public License (GPL) version fw2  or the GNU\nLesser General Public License (LGPL) Version fw3 or \nLesser General Public License (LGPL) Version fw4 \nA copy of each such license is available at\nhttp://name2.example.com/licenses/gpl-fw4php and\nhttp://name3.example.com/licenses/gpl-fw2.html and\nhttp://name2.example.com/licenses/lgpl-fw3.php and\nhttp://name4.example.com/licenses/old-licenses/library.txt.",
+  "host_name": "term19",
+  "kern_uptm_days": "1359",
+  "kern_uptm_hrs": "7",
+  "kern_uptm_mins": "2",
+  "kern_uptm_secs": "26",
+  "kick_cmpl_time": "12/22/2019 2:00:00",
+  "kick_file_name": "bootflash:///nxos.term54.bin",
+  "kick_tmstmp": "12/22/2019 14:00:37",
+  "kickstart_ver_str": "term53",
+  "manufacturer": "Cisco Systems, Inc.",
+  "mem_type": "kB",
+  "memory": "24632280",
+  "nxos_cmpl_time": "12/22/2019 2:00:00",
+  "nxos_file_name": "bootflash:///nxos.term54.bin",
+  "nxos_tmstmp": "12/22/2019 14:00:37",
+  "nxos_ver_str": "term53",
+  "plugins": "Core Plugin, Ethernet Plugin",
+  "proc_board_id": "term38",
+  "rr_reason": "Module PowerCycled",
+  "rr_service": "HW check by card-client",
+  "rr_sys_ver": null,
+  "rr_usecs": "221640"
+}

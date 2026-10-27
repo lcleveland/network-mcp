@@ -14,7 +14,12 @@ import (
 // environments, or are never committed.
 func TestFixturesAreSanitized(t *testing.T) {
 	root := filepath.Join("..", "..", "testdata")
-	err := filepath.WalkDir(root, func(p string, d fs.DirEntry, err error) error {
+	// the operator's real names, when this checkout has the local list
+	terms, err := Denylist(filepath.Join("..", "..", DenylistFile))
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = filepath.WalkDir(root, func(p string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
@@ -36,7 +41,7 @@ func TestFixturesAreSanitized(t *testing.T) {
 		if strings.HasSuffix(p, ".snmprec") {
 			text = Snmprec(text)
 		}
-		for _, v := range Violations(text) {
+		for _, v := range append(Violations(text), Denied(string(b), terms)...) {
 			t.Errorf("%s: %s (run cmd/sanitize)", p, v)
 		}
 		return nil
@@ -101,5 +106,20 @@ func TestViolations(t *testing.T) {
 		if v := Violations(s); len(v) == 0 {
 			t.Errorf("%q passed the guard", s)
 		}
+	}
+}
+
+func TestDenylist(t *testing.T) {
+	p := filepath.Join(t.TempDir(), DenylistFile)
+	if terms, err := Denylist(p); terms != nil || err != nil {
+		t.Fatalf("absent list: %v %v", terms, err)
+	}
+	os.WriteFile(p, []byte("# names\n  acme-core-7 \n\nacme.example\n"), 0o600)
+	terms, err := Denylist(p)
+	if err != nil || strings.Join(terms, ",") != "acme-core-7,acme.example" {
+		t.Fatalf("%q %v", terms, err)
+	}
+	if d := Denied("hostname ACME-Core-7\nip domain name dev1", terms); len(d) != 1 || d[0] != "denylisted acme-core-7" {
+		t.Fatalf("%v", d)
 	}
 }
