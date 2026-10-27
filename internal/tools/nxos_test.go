@@ -3,6 +3,7 @@ package tools
 import (
 	"fmt"
 	"os"
+	"regexp"
 	"slices"
 	"strings"
 	"testing"
@@ -88,7 +89,12 @@ func TestNexusStaleCheckpoint(t *testing.T) {
 	if sent(dev, "configure terminal") || len(dev.Checkpoints()) != 1 || !strings.Contains(e.audit.String(), `"event":"apply","outcome":"refused"`) {
 		t.Fatalf("refused apply touched the device: %q", dev.Log())
 	}
+	before := len(dev.Log())
 	st, _ := e.call(t, "network_status", map[string]any{"device": "dev1"})
+	// the driver's session-only terminal setup, then the one fixed command
+	if got := strings.Join(dev.Log()[before:], ";"); !regexp.MustCompile(`^\d+ terminal width 511;\d+ terminal length 0;\d+ show checkpoint summary$`).MatchString(got) {
+		t.Fatalf("network_status on NX-OS must send only show checkpoint summary: %q", got)
+	}
 	if fmt.Sprint(st["stale_checkpoints"]) != "["+stale+"]" || !strings.Contains(fmt.Sprint(st["_untrusted"]), "stale_checkpoints") ||
 		!strings.Contains(fmt.Sprint(st["checks"]), "map[detail:network-mcp-* checkpoints mark") {
 		t.Fatalf("network_status: %v", st)

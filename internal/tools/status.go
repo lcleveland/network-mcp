@@ -49,9 +49,11 @@ func registerStatus(s *mcp.Server, d Deps) {
 		Description: "Without device: the server version, enabled tool groups, the health of each inventory source and, " +
 			"with network_change enabled, the pending plan and change counts.\n\n" +
 			"With device: each connect check in order (management-prefix gate, TCP, pinned host key, read-credential auth, " +
-			"prompt detected; only the gate for an SNMP-only device, one with no read_ref), stopping at the first failure; on NX-OS " +
-			"it then runs show checkpoint summary and lists any network-mcp-* checkpoint (a change nobody confirmed or rolled back) " +
-			"in stale_checkpoints; then, if the device has SNMP, an SNMP sysUpTime.0 read. It runs no other CLI command. " +
+			"prompt detected; only the gate for an SNMP-only device, one with no read_ref), stopping at the first failure; " +
+			"then, if the device has SNMP, an SNMP sysUpTime.0 read. It runs no CLI command, with one exception: on NX-OS, " +
+			"after the prompt, it runs show checkpoint summary with the read credential (whether or not writes are enabled) " +
+			"and lists any network-mcp-* checkpoint, a change left applied that nobody confirmed or rolled back, in " +
+			"stale_checkpoints. That check is reported on its own and never changes the earlier checks. " +
 			"Call this first when network_show fails.\n\n" + UntrustedNote,
 		Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true, OpenWorldHint: new(true)},
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, in StatusInput) (*mcp.CallToolResult, StatusOutput, error) {
