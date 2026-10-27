@@ -88,6 +88,8 @@ func TestGettersNXOS(t *testing.T) {
 		"show system resources | json": big.String(),
 		"show clock | json":            `{"simple_time": "12:00:00"}`,
 		"show hostname | json":         "dev1",
+		// seen on a real 9.3(3) switch: shell noise ahead of the JSON
+		"show uptime | json": "sh: /mnt/pss/patch_debug.log: Read-only file system\n{\"sys_up_days\": \"1359\"}",
 	}
 	for g, f := range files {
 		cmds[platform.Profiles["nxos"][g]+" | json"] = string(must(os.ReadFile(f)))
@@ -125,6 +127,10 @@ func TestGettersNXOS(t *testing.T) {
 	out, _ = e.call(t, "network_show", map[string]any{"device": "dev1", "command": "show clock", "include": []string{"simple_time"}})
 	if out["parsed"] != false || out["output"] != ` "simple_time": "12:00:00"` {
 		t.Errorf("filtered JSON: %v", out)
+	}
+	out, _ = e.call(t, "network_show", map[string]any{"device": "dev1", "command": "show uptime"})
+	if out["parsed"] != true || fmt.Sprint(out["data"]) != "map[sys_up_days:1359]" {
+		t.Errorf("JSON after leading noise: %v", out)
 	}
 	out, _ = e.call(t, "network_show", map[string]any{"device": "dev1", "command": "show hostname"})
 	if out["parsed"] != false || out["output"] != "dev1" {
