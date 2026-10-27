@@ -96,10 +96,16 @@ func TestParseFile(t *testing.T) {
 		``:                            "management_prefixes is empty",
 		`management_prefixes: []`:     "management_prefixes is empty",
 		`management_prefixes: [nope]`: "nope",
-		"management_prefixes: [192.0.2.0/24]\npassword: x":                              "password",
-		"management_prefixes: [192.0.2.0/24]\nsources: [{name: a, type: netbox}]":       "unknown type",
-		"management_prefixes: [192.0.2.0/24]\nsources: [{name: a, type: file}]":         "path",
-		"management_prefixes: [192.0.2.0/24]\ncredentials: {default: {read_ref: ../x}}": "valid ref",
+		"management_prefixes: [192.0.2.0/24]\npassword: x":                                             "password",
+		"management_prefixes: [192.0.2.0/24]\nsources: [{name: a, type: netbox}]":                      "unknown type",
+		"management_prefixes: [192.0.2.0/24]\nsources: [{name: a, type: file}]":                        "path",
+		"management_prefixes: [192.0.2.0/24]\ncredentials: {default: {read_ref: ../x}}":                "valid ref",
+		"management_prefixes: [192.0.2.0/24]\nplatforms: {c9k: {driver: iosxr}}":                       "driver",
+		"management_prefixes: [192.0.2.0/24]\nplatforms: {c9k: {profile: junos}}":                      "profile",
+		"management_prefixes: [192.0.2.0/24]\nplatforms: {c9k: {drvier: iosxe}}":                       "drvier",
+		"management_prefixes: [192.0.2.0/24]\nplatforms: {C9K: {}, c9k: {}}":                           "repeats",
+		"management_prefixes: [192.0.2.0/24]\nplatforms: {c9k: {getters: {x: 'show version | json'}}}": "character",
+		"management_prefixes: [192.0.2.0/24]\nplatforms: {c9k: {read_allow: ['a b']}}":                 "one keyword",
 	} {
 		if _, err := ParseFile([]byte(in)); err == nil || !strings.Contains(err.Error(), want) {
 			t.Errorf("%q: %v, want %q", in, err, want)

@@ -56,6 +56,11 @@ func compile(name string, pats []string) ([]*regexp.Regexp, error) {
 	return out, nil
 }
 
+// Active reports whether any pattern was given.
+func (f *Filter) Active() bool {
+	return f != nil && (f.section != nil || len(f.include)+len(f.exclude) > 0)
+}
+
 func (f *Filter) apply(lines []string) []string {
 	if f == nil {
 		return lines

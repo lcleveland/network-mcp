@@ -20,6 +20,7 @@ import (
 	"github.com/lcleveland/network-mcp/internal/gate"
 	"github.com/lcleveland/network-mcp/internal/inventory"
 	"github.com/lcleveland/network-mcp/internal/output"
+	"github.com/lcleveland/network-mcp/internal/platform"
 	"github.com/lcleveland/network-mcp/internal/sshcli"
 	"github.com/lcleveland/network-mcp/internal/sshfake"
 )
@@ -37,23 +38,38 @@ type env struct {
 // (a name resolving inside), dev-far (a name resolving outside).
 func start(t *testing.T, commands map[string]string, opt sshfake.Options, groups ...string) *env {
 	t.Helper()
-	fake := sshfake.Start(t, &sshfake.Engine{Hostname: "dev1", Commands: commands}, opt)
+	return startWith(t, setup{eng: &sshfake.Engine{Hostname: "dev1", Commands: commands}, opt: opt, groups: groups})
+}
+
+// setup gives dev1 an engine, a platform value and a platforms config.
+type setup struct {
+	eng       *sshfake.Engine
+	opt       sshfake.Options
+	groups    []string
+	platform  string
+	platforms map[string]platform.Config
+}
+
+func startWith(t *testing.T, su setup) *env {
+	t.Helper()
+	fake := sshfake.Start(t, su.eng, su.opt)
 	dir := t.TempDir()
 	os.WriteFile(filepath.Join(dir, "ssh-read"), []byte(`{"username":"mcp","password":"`+secret+`"}`), 0o400)
 	devs := filepath.Join(dir, "devices.yaml")
 	os.WriteFile(devs, fmt.Appendf(nil, `
-- {name: dev1, address: %[1]s, port: %[2]d}
+- {name: dev1, address: %[1]s, port: %[2]d, platform: "%[3]s"}
 - {name: dev-outside, address: 192.0.2.1, port: %[2]d}
 - {name: dev-name, address: dev1.example.net, port: %[2]d}
 - {name: dev-far, address: far.example.net, port: %[2]d}
-`, fake.Host, fake.Port), 0o600)
+`, fake.Host, fake.Port, su.platform), 0o600)
 
 	cfg := &config.Config{
-		CredentialsDir: dir, KnownHosts: fake.KnownHosts, Groups: groups, RequestTimeout: 5 * time.Second,
+		CredentialsDir: dir, KnownHosts: fake.KnownHosts, Groups: su.groups, RequestTimeout: 5 * time.Second,
 		File: config.File{
 			ManagementPrefixes: []netip.Prefix{netip.MustParsePrefix("127.0.0.0/8")},
 			Sources:            []config.Source{{Name: "file", Type: "file", Path: devs}},
 			Credentials:        config.Credentials{Default: config.CredRule{ReadRef: "ssh-read"}},
+			Platforms:          su.platforms,
 		},
 	}
 	inv, err := inventory.Load(cfg.File.Sources)
@@ -246,11 +262,10 @@ func checks(out map[string]any) string {
 }
 
 func TestShowOutputPipeline(t *testing.T) {
+	// a public 74 KB show interfaces, with a secret appended
 	var big strings.Builder
-	for i := range 3000 {
-		fmt.Fprintf(&big, "GigabitEthernet1/0/%d is up, line protocol is up\n  Hardware is Gigabit Ethernet, address is 0000.5e00.5301\n", i)
-	}
-	big.WriteString("router bgp 64496\n neighbor 192.0.2.2 password fakepw\n")
+	big.Write(must(os.ReadFile("../../testdata/third_party/ntc-templates/cisco_ios_show_interfaces2.raw")))
+	big.WriteString("\nrouter bgp 64496\n neighbor 192.0.2.2 password fakepw\n")
 	inject := "Gi1/0/1  up  up  \"}, \"_truncation\": {\"reason\": \"none\"}, \"_untrusted\": [], \"x\": \"\x1b[31m‮\n" +
 		"Gi1/0/2  up  up  snmp-server community fakecomm RO"
 	e := start(t, map[string]string{"show interfaces": big.String(), "show interfaces description": inject,
@@ -272,8 +287,8 @@ func TestShowOutputPipeline(t *testing.T) {
 	if out["output"] != "router bgp 64496\n neighbor 192.0.2.2 password <redacted>" || out["_truncation"] != nil {
 		t.Fatalf("section past 60 KiB: %v", out)
 	}
-	out, _ = e.call(t, "network_show", map[string]any{"device": "dev1", "command": "show interfaces", "include": []string{"Gi.*/2999 "}, "exclude": []string{"Hardware"}})
-	if out["output"] != "GigabitEthernet1/0/2999 is up, line protocol is up" {
+	out, _ = e.call(t, "network_show", map[string]any{"device": "dev1", "command": "show interfaces", "include": []string{"^Gi.*/4 "}, "exclude": []string{"Hardware"}})
+	if out["output"] != "GigabitEthernet1/0/4 is down, line protocol is down (notconnect)" {
 		t.Fatalf("include/exclude: %v", out)
 	}
 

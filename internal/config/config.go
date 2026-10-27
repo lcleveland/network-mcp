@@ -23,6 +23,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/lcleveland/network-mcp/internal/creds"
+	"github.com/lcleveland/network-mcp/internal/platform"
 )
 
 // Groups are the tool groups --tool-groups may name. core is always on.
@@ -50,6 +51,8 @@ type File struct {
 	ManagementPrefixes []netip.Prefix `yaml:"management_prefixes"`
 	Sources            []Source       `yaml:"sources"`
 	Credentials        Credentials    `yaml:"credentials"`
+	// keyed by the sources' platform value, case-insensitively
+	Platforms map[string]platform.Config `yaml:"platforms"`
 }
 
 type Source struct {
@@ -215,7 +218,7 @@ func ParseFile(b []byte) (File, error) {
 	if r := f.Credentials.Default.ReadRef; r != "" && !creds.ValidRef(r) {
 		return f, fmt.Errorf("credentials.default.read_ref %q is not a valid ref name", r)
 	}
-	return f, nil
+	return f, platform.Validate(f.Platforms)
 }
 
 // Enabled reports whether a tool group is on.

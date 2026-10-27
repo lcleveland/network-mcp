@@ -9,7 +9,7 @@ import (
 	"strings"
 )
 
-// Deny is compiled in; config can add to it later but never shrink it.
+// Deny is compiled in; an Ext can add to it but never shrink it.
 var Deny = []string{
 	"debug", "undebug", "terminal", "configure", "copy", "more", "reload", "clear",
 	"show tech", "show running", "show startup", "show archive", "show file",
@@ -24,8 +24,30 @@ var pingDeny = []string{"repeat", "count", "size", "timeout", "sweep"}
 
 const maxLen = 256
 
+// Ext is a platform's read_allow (extra first keywords) and read_deny (extra
+// deny entries). It only adds: deny is checked first, so no allow entry can
+// unblock a denied command, and the character set never changes.
+type Ext struct {
+	Allow, Deny []string
+}
+
+// Validate refuses entries outside the character set and multi-word allows.
+func (x Ext) Validate() error {
+	for _, e := range slices.Concat(x.Allow, x.Deny) {
+		if strings.TrimSpace(e) == "" || strings.IndexFunc(e, func(r rune) bool { return !allowedChar(r) }) >= 0 {
+			return fmt.Errorf("read_allow/read_deny entry %q: use only letters, digits, spaces and . / : _ , -", e)
+		}
+	}
+	for _, a := range x.Allow {
+		if strings.ContainsRune(a, ' ') {
+			return fmt.Errorf("read_allow entry %q must be one keyword", a)
+		}
+	}
+	return nil
+}
+
 // Check returns the command with whitespace collapsed, or why it is refused.
-func Check(cmd string) (string, error) {
+func Check(cmd string, x Ext) (string, error) {
 	for _, r := range cmd {
 		if !allowedChar(r) {
 			return "", fmt.Errorf("character %q is not allowed: use only letters, digits, spaces and . / : _ , - (no pipes; filter server-side)", r)
@@ -39,19 +61,20 @@ func Check(cmd string) (string, error) {
 	case len(norm) > maxLen:
 		return "", fmt.Errorf("command longer than %d bytes", maxLen)
 	}
-	for _, d := range Deny {
+	for _, d := range slices.Concat(Deny, x.Deny) {
 		if matches(tok, strings.Fields(d)) {
 			return "", fmt.Errorf("command matches the denied %q", d)
 		}
 	}
+	allow := slices.Concat(Allow, x.Allow)
 	first := strings.ToLower(tok[0])
-	if !slices.Contains(Allow, first) {
-		for _, a := range Allow {
-			if strings.HasPrefix(a, first) {
+	if !slices.ContainsFunc(allow, func(a string) bool { return strings.EqualFold(a, first) }) {
+		for _, a := range allow {
+			if strings.HasPrefix(strings.ToLower(a), first) {
 				return "", fmt.Errorf("abbreviations are not accepted: write %q in full", a)
 			}
 		}
-		return "", fmt.Errorf("only commands starting with %s are allowed", strings.Join(Allow, ", "))
+		return "", fmt.Errorf("only commands starting with %s are allowed", strings.Join(allow, ", "))
 	}
 	if first == "ping" || first == "traceroute" {
 		if len(tok) < 2 {

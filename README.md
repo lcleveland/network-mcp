@@ -1,6 +1,6 @@
 # network-mcp
 
-An MCP server, written in Go, that reads network devices over SSH. It is general-purpose: any SSH device works through the generic driver. First-class IOS-XE and NX-OS drivers, SNMP, config export and gated writes come in later releases. It serves stdio or streamable HTTP and is packaged as a Nix flake with a NixOS module.
+An MCP server, written in Go, that reads network devices over SSH. It is general-purpose: any SSH device works through the generic driver, and IOS-XE and NX-OS have first-class drivers. SNMP, config export and gated writes come in later releases. It serves stdio or streamable HTTP and is packaged as a Nix flake with a NixOS module.
 
 The server is read-only. Before anything reaches a device, it checks four things:
 - the device is in the inventory and opted in;
@@ -13,7 +13,18 @@ The server is read-only. Before anything reaches a device, it checks four things
 | Group | Tool | What it does |
 |---|---|---|
 | core (always on) | `network_status` | Without `device`: version, enabled groups, inventory source health. With `device`: each connect check in order (prefix gate, TCP, host key, auth, prompt). Runs no CLI command. |
-| cli | `network_show` | `device`, `command`: one read command, raw text. |
+| cli | `network_show` | `device` and exactly one of `getter` or `command`; filters `include`, `exclude`, `section`. Raw text, or JSON in `data` on NX-OS. |
+
+**Platforms.** The device's `platform` value picks the driver and getter profile, ignoring case:
+
+| Platform values | Driver | Getters |
+|---|---|---|
+| `ios-xe`, `iosxe`, `cisco_iosxe`, `cisco-ios-xe` | `iosxe` | `iosxe` |
+| `nx-os`, `nxos`, `cisco_nxos`, `cisco-nx-os` | `nxos` | `nxos` |
+| `ios`, `cisco_ios`, `cisco-ios` | `generic_ssh` | `ios` |
+| anything else or missing | `generic_ssh` | none |
+
+The `iosxe` and `nxos` drivers use scrapligo's embedded platform definitions and send only the session-only `terminal width` and `terminal length 0` before the first command. They never run `enable`: an account that lands at `>` reads at exec level. Getters use NAPALM names (`facts`, `inventory`, `environment`, `interfaces`, `interfaces_ip`, `vlans`, `lldp_neighbors`, `cdp_neighbors`, `arp_table`, `mac_address_table`, `routes`, `bgp_neighbors`) and return raw output; each maps to one command that passes the read gate. On NX-OS the server appends ` | json` after the gate: valid JSON comes back in `data` with `parsed: true` (keys such as `community` or `password` are redacted), and anything else, or JSON over 60 KiB or with a filter, comes back as text with `parsed: false`.
 
 Results are JSON built by the server. Device text appears only in the fields listed in `_untrusted`, and device-side failures appear in `device_error`.
 
@@ -48,7 +59,15 @@ sources:
   - {name: file, type: file, path: /etc/network-mcp/devices.yaml}
 credentials:
   default: {read_ref: ssh-read}
+platforms:                             # optional; keys match the platform value, ignoring case
+  c9k: {driver: iosxe, profile: iosxe} # nothing is inferred: set both
+  aos:
+    getters: {clients: show clients}   # name -> command; overrides a profile getter of the same name
+    read_allow: [who]                  # extra first keywords
+    read_deny: [show clients detail]   # extra deny entries
 ```
+
+Getter commands pass the same read gate. Allow and deny entries only add: none removes a compiled-in deny or widens the character set, and an unknown driver or profile, or a getter command the gate refuses, stops startup.
 
 The device file is a list. Names are unique and case-insensitive, and every device listed is opted in:
 

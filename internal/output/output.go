@@ -20,8 +20,8 @@ const (
 	LongCap   = 512 // sysDescr-like fields and device_error
 	LineCap   = 4096
 	MaxResult = 60 << 10
-	// room left in MaxResult for the envelope around a text field
-	envelope = 4 << 10
+	// room left in MaxResult for the envelope around a text or data field
+	Envelope = 4 << 10
 
 	Redacted = "<redacted>"
 	HintCLI  = "narrow with include/section"
@@ -212,7 +212,7 @@ func (f *Filter) Text(raw string, limited bool) (string, int, *Truncation) {
 		l = Cap(l, LineCap)
 		lines[i] = l
 		b, _ := json.Marshal(l)
-		if size += len(b); size > MaxResult-envelope { // quotes stand in for the \n escape
+		if size += len(b); size > MaxResult-Envelope { // quotes stand in for the \n escape
 			tr = &Truncation{Reason: "bytes", Shown: i, Total: len(lines), Hint: HintCLI}
 			lines = lines[:i]
 			break

@@ -1,0 +1,16 @@
+https://github.com/napalm-automation/napalm
+commit 820a06b2069eb1d7b0cbe8943ee2dea6e2949d1a
+
+ios_show_env_temperature_status.txt     test/ios/mocked_data/test_get_environment/ios_xe/show_env_temperature_status.txt (sanitized, see NOTICE)
+ios_show_vlan_brief.txt                 test/ios/mocked_data/test_get_vlans/no_show_vlan_all_ports/show_vlan_brief.txt (sanitized, see NOTICE)
+nxos_show_bgp_all_summary_vrf_all.json  test/nxos/mocked_data/test_get_bgp_neighbors/l2vpn/show_bgp_all_summary_vrf_all.json (sanitized, see NOTICE)
+nxos_show_environment.json              test/nxos/mocked_data/test_get_environment/normal/show_environment.json (sanitized, see NOTICE)
+nxos_show_interface.json                test/nxos/mocked_data/test_get_interfaces/admin_up_oper_down/show_interface.json (sanitized, see NOTICE)
+nxos_show_inventory.json                test/nxos/mocked_data/test_get_facts/normal/show_inventory.json (sanitized, see NOTICE)
+nxos_show_ip_arp.json                   test/nxos/mocked_data/test_get_arp_table/normal/show_ip_arp.json (sanitized, see NOTICE)
+nxos_show_ip_interface.json             test/nxos/mocked_data/test_get_interfaces_ip/normal/show_ip_interface.json (sanitized, see NOTICE)
+nxos_show_lldp_neighbors_detail.txt     test/nxos/mocked_data/test_get_lldp_neighbors_detail/normal/show_lldp_neighbors_detail.json (renamed: it holds text, not JSON; sanitized, see NOTICE)
+nxos_show_mac_address-table.json        test/nxos/mocked_data/test_get_mac_address_table/normal/show_mac_address-table.json (sanitized, see NOTICE)
+nxos_show_version.json                  test/nxos/mocked_data/test_get_facts/normal/show_version.json (sanitized, see NOTICE)
+nxos_show_vlan_brief.json               test/nxos/mocked_data/test_get_vlans/6000/show_vlan_brief.json (verbatim)
+LICENSE                                 LICENSE (verbatim, Apache-2.0)

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/netip"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -50,6 +51,53 @@ func TestRun(t *testing.T) {
 	}
 	if got := s.Received(); len(got) < 2 || got[0] != "show version" || got[1] != "show log" {
 		t.Fatalf("received %q", got)
+	}
+}
+
+func TestPlatformDrivers(t *testing.T) {
+	long := strings.Repeat("a", 62) + "1" // 63 characters
+	for _, tc := range []struct {
+		driver, host string
+		profile      sshfake.Profile
+		setup        []string
+		failure      string
+	}{
+		{"iosxe", "dev1", sshfake.IOSXE, []string{"terminal width 512", "terminal length 0"}, "show bogus"},
+		{"nxos", long, sshfake.NXOS, []string{"terminal width 511", "terminal length 0"}, "show bogus"},
+		{"nxos", "dev1", sshfake.Profile{Prompt: ">", Invalid: "ERROR: no such command\n"}, []string{"terminal width 511", "terminal length 0"}, "show bogus"},
+	} {
+		s := sshfake.Start(t, &sshfake.Engine{
+			Hostname: tc.host, Profile: tc.profile,
+			Banner:   "user$\nlast$ \n", // not a prompt for either platform
+			Commands: map[string]string{"show version": "line$\nsh$\ndev1>x\nend", "show log": "ok\nok\nok\nERROR: in a log line"},
+		}, sshfake.Options{})
+		tg := target(s, "mcp")
+		tg.Driver = tc.driver
+		ses, err := Open(context.Background(), tg)
+		if err != nil {
+			t.Fatalf("%s: %v", tc.driver, err)
+		}
+		if want := strings.TrimSpace(tc.host + tc.profile.Prompt); ses.Prompt() != want {
+			t.Errorf("%s: prompt %q, want %q", tc.driver, ses.Prompt(), want)
+		}
+		if len(s.Received()) != 0 {
+			t.Errorf("%s: Open sent %q", tc.driver, s.Received())
+		}
+		out, err := ses.Run(context.Background(), "show version")
+		if err != nil || out != "line$\nsh$\ndev1>x\nend" {
+			t.Errorf("%s: %q %v", tc.driver, out, err)
+		}
+		if out, err := ses.Run(context.Background(), "show log"); err != nil || !strings.HasSuffix(out, "log line") {
+			t.Errorf("%s: a failure string deep in output: %q %v", tc.driver, out, err)
+		}
+		if _, err := ses.Run(context.Background(), tc.failure); err == nil || !strings.Contains(err.Error(), tc.profile.Invalid[:5]) {
+			t.Errorf("%s: device failure: %v", tc.driver, err)
+		}
+		ses.Close()
+		want := append(tc.setup, "show version", "show log", tc.failure)
+		if got := s.Received(); !slices.Equal(got[:min(len(got), len(want))], want) || slices.Contains(got, "enable") {
+			t.Errorf("%s: received %q, want %q", tc.driver, got, want)
+		}
 	}
 }
 

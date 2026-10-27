@@ -202,7 +202,7 @@ func bigText(n int) string {
 func TestTextCuts(t *testing.T) {
 	raw := bigText(2000) + "router bgp 64496\n neighbor 192.0.2.2 password fakepw\n"
 	out, n, tr := (*Filter)(nil).Text(raw, false)
-	if b, _ := json.Marshal(out); len(b) > MaxResult-envelope || tr == nil || tr.Reason != "bytes" || tr.Hint != HintCLI ||
+	if b, _ := json.Marshal(out); len(b) > MaxResult-Envelope || tr == nil || tr.Reason != "bytes" || tr.Hint != HintCLI ||
 		tr.Total != strings.Count(raw, "\n")+1 || tr.Shown != strings.Count(out, "\n")+1 || n != 1 {
 		t.Fatalf("%d bytes, %+v, %d", len(b), tr, n)
 	}

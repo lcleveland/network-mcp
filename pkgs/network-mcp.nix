@@ -22,7 +22,7 @@ buildGoModule (finalAttrs: {
     ];
   };
 
-  vendorHash = "sha256-3w9TZWaQsK3T5BXt5423MivCck4yp6CKd/fMyT/N2Kk=";
+  vendorHash = "sha256-oEby1YMHMVnsx7FV/Y8PzDmD7AlEFcig5RjAS0wk8a8=";
 
   subPackages = [ "cmd/network-mcp" ];
   env.CGO_ENABLED = 0;

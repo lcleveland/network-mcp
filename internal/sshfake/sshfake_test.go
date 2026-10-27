@@ -156,4 +156,13 @@ func TestEngine(t *testing.T) {
 	if out.String() != want {
 		t.Errorf("got %q, want %q", out.String(), want)
 	}
+
+	out.Reset()
+	e = Engine{Hostname: "n9k", Profile: NXOS}
+	if err := e.Serve(strings.NewReader("show x\n"), &out); err != nil {
+		t.Fatal(err)
+	}
+	if want := "n9k# show x\n% Invalid command at '^' marker.\nn9k# "; out.String() != want {
+		t.Errorf("NX-OS profile: got %q, want %q", out.String(), want)
+	}
 }

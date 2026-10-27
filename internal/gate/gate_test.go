@@ -19,7 +19,7 @@ func TestCheck(t *testing.T) {
 		"show arp":                       "show arp",
 	}
 	for in, want := range allowed {
-		got, err := Check(in)
+		got, err := Check(in, Ext{})
 		if err != nil || got != want {
 			t.Errorf("Check(%q) = %q, %v; want %q", in, got, err, want)
 		}
@@ -51,8 +51,34 @@ func TestCheck(t *testing.T) {
 		refused[s] = "denied"
 	}
 	for in, msg := range refused {
-		if _, err := Check(in); err == nil || !strings.Contains(err.Error(), msg) {
+		if _, err := Check(in, Ext{}); err == nil || !strings.Contains(err.Error(), msg) {
 			t.Errorf("Check(%q) = %v; want error containing %q", in, err, msg)
+		}
+	}
+}
+
+func TestExt(t *testing.T) {
+	x := Ext{Allow: []string{"who", "debug", "Show"}, Deny: []string{"show interfaces counters"}}
+	if err := x.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := Check("WHO  am i", x); err != nil || got != "WHO am i" {
+		t.Errorf("read_allow: %q %v", got, err)
+	}
+	if _, err := Check("who", Ext{}); err == nil {
+		t.Error("who allowed without read_allow")
+	}
+	for _, c := range []string{"show interfaces counters", "sh int count errors", "debug all", "show running-config", "sh run"} {
+		if _, err := Check(c, x); err == nil || !strings.Contains(err.Error(), "denied") {
+			t.Errorf("%q: %v", c, err)
+		}
+	}
+	if _, err := Check("show interfaces status", x); err != nil {
+		t.Errorf("read_deny over-matched: %v", err)
+	}
+	for _, bad := range []Ext{{Allow: []string{"show version"}}, {Allow: []string{""}}, {Deny: []string{"show|x"}}, {Allow: []string{"wh\no"}}} {
+		if bad.Validate() == nil {
+			t.Errorf("%+v validated", bad)
 		}
 	}
 }

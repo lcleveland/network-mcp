@@ -1,7 +1,8 @@
-// Package sshcli is the generic SSH driver: scrapligo v1 over its pure-Go
+// Package sshcli holds the SSH drivers: scrapligo v1 over its pure-Go
 // "standard" transport, a pinned known_hosts file, prompt detection and pager
-// answering. It sends exactly the commands it is given; gating is the
-// caller's job.
+// answering. The generic driver sends exactly the commands it is given; the
+// IOS-XE and NX-OS drivers add only session-only terminal settings. Gating
+// is the caller's job.
 package sshcli
 
 import (
@@ -16,6 +17,7 @@ import (
 
 	"github.com/scrapli/scrapligo/driver/generic"
 	"github.com/scrapli/scrapligo/driver/options"
+	"github.com/scrapli/scrapligo/platform"
 	"github.com/scrapli/scrapligo/util"
 	"golang.org/x/crypto/ssh/knownhosts"
 
@@ -43,6 +45,18 @@ type Target struct {
 	KnownHosts string
 	Cred       creds.Cred
 	Timeout    time.Duration
+	Driver     string // "iosxe", "nxos"; anything else is the generic driver
+}
+
+// drivers maps a driver to its embedded scrapligo platform and the
+// session-only settings sent before the first command. Only these constants
+// reach platform.NewPlatform, which would read a path or URL otherwise.
+var drivers = map[string]struct {
+	platform string
+	setup    []string
+}{
+	"iosxe": {"cisco_iosxe", []string{"terminal width 512", "terminal length 0"}},
+	"nxos":  {"cisco_nxos", []string{"terminal width 511", "terminal length 0"}},
 }
 
 // Stage says how far a failed Open got, for network_status.
@@ -66,10 +80,13 @@ func (e *OpenError) Unwrap() error { return e.Err }
 type Session struct {
 	d      *generic.Driver
 	prompt string
+	setup  []string // sent by the first Run, so Open sends nothing
 }
 
 // Open connects, authenticates and waits for the first prompt without
-// sending anything.
+// sending anything. A platform driver takes its prompt patterns and failure
+// strings from the scrapligo platform, but never changes privilege: an
+// account landing at ">" reads at exec level.
 func Open(ctx context.Context, t Target) (*Session, error) {
 	host := t.Addr.String()
 	if t.Addr.Is6() {
@@ -89,7 +106,8 @@ func Open(ctx context.Context, t Target) (*Session, error) {
 	} else {
 		opts = append(opts, options.WithAuthPassword(t.Cred.Password))
 	}
-	d, err := generic.NewDriver(host, opts...)
+	drv := drivers[t.Driver]
+	d, err := newDriver(host, drv.platform, opts)
 	if err != nil {
 		return nil, &OpenError{StageConnect, err}
 	}
@@ -103,8 +121,26 @@ func Open(ctx context.Context, t Target) (*Session, error) {
 		d.Close()
 		return nil, &OpenError{StagePrompt, fmt.Errorf("no prompt detected: %w", err)}
 	}
-	m := promptPattern.FindAll(b, -1)
-	return &Session{d: d, prompt: strings.TrimSpace(string(m[len(m)-1]))}, nil
+	m := d.Channel.PromptPattern.FindAll(b, -1)
+	return &Session{d: d, prompt: strings.TrimSpace(string(m[len(m)-1])), setup: drv.setup}, nil
+}
+
+// newDriver builds the generic driver, or a platform's embedded one. The
+// platform's network driver is never opened: its on-open and on-close
+// acquire privilege with "enable".
+func newDriver(host, plat string, opts []util.Option) (*generic.Driver, error) {
+	if plat == "" {
+		return generic.NewDriver(host, opts...)
+	}
+	p, err := platform.NewPlatform(plat, host, opts...)
+	if err != nil {
+		return nil, err
+	}
+	nd, err := p.GetNetworkDriver()
+	if err != nil {
+		return nil, err
+	}
+	return nd.Driver, nil
 }
 
 func classify(err error) Stage {
@@ -123,9 +159,34 @@ func (s *Session) Prompt() string { return s.prompt }
 func (s *Session) Close() { s.d.Close() }
 
 // Run sends one command and returns its output without the echo, pager
-// prompts or the trailing prompt. Paging is never turned off (on some
-// platforms that is a config change); pager prompts are answered with a space.
+// prompts or the trailing prompt. The generic driver never turns paging off
+// (on some platforms that is a config change); pager prompts are answered
+// with a space. A platform's failure string near the top of the output
+// returns the output as the error.
 func (s *Session) Run(ctx context.Context, cmd string) (string, error) {
+	for len(s.setup) > 0 {
+		// the reply is ignored: a refused setting only leaves paging on
+		if _, err := s.run(ctx, s.setup[0]); err != nil {
+			return "", err
+		}
+		s.setup = s.setup[1:]
+	}
+	out, err := s.run(ctx, cmd)
+	if err != nil {
+		return out, err
+	}
+	// devices print the failure first; further down it is output, such as a log line
+	lines := strings.SplitN(out, "\n", 4)
+	head := strings.Join(lines[:min(3, len(lines))], "\n")
+	for _, f := range s.d.FailedWhenContains {
+		if strings.Contains(head, f) {
+			return "", errors.New(out)
+		}
+	}
+	return out, nil
+}
+
+func (s *Session) run(ctx context.Context, cmd string) (string, error) {
 	if err := s.d.Channel.WriteAndReturn([]byte(cmd), false); err != nil {
 		return "", err
 	}

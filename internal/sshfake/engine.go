@@ -9,10 +9,19 @@ import (
 	"time"
 )
 
-const invalid = "% Invalid input detected at '^' marker.\n"
+// Profile is a platform's prompt after the hostname and its reply to an
+// unknown command.
+type Profile struct{ Prompt, Invalid string }
+
+// Prompt profiles; NX-OS leaves a space after "#".
+var (
+	IOSXE = Profile{"#", "% Invalid input detected at '^' marker.\n"}
+	NXOS  = Profile{"# ", "% Invalid command at '^' marker.\n"}
+)
 
 type Engine struct {
-	Hostname    string            // prompt is Hostname+"#"
+	Hostname    string            // prompt is Hostname+Profile.Prompt
+	Profile     Profile           // default IOSXE
 	Banner      string            // printed before the first prompt
 	Commands    map[string]string // exact command line -> output
 	PromptDelay time.Duration     // sleep before each prompt
@@ -25,12 +34,16 @@ type Engine struct {
 // Serve runs one CLI session. It returns nil on EOF, "exit" or "quit".
 func (e *Engine) Serve(r io.Reader, w io.Writer) error {
 	br := &crlfReader{r: bufio.NewReader(r)}
+	p := e.Profile
+	if p == (Profile{}) {
+		p = IOSXE
+	}
 	if _, err := io.WriteString(w, e.Banner); err != nil {
 		return err
 	}
 	for {
 		time.Sleep(e.PromptDelay)
-		if _, err := io.WriteString(w, e.Hostname+"#"); err != nil {
+		if _, err := io.WriteString(w, e.Hostname+p.Prompt); err != nil {
 			return err
 		}
 		var line []byte
@@ -60,7 +73,7 @@ func (e *Engine) Serve(r io.Reader, w io.Writer) error {
 		}
 		out, ok := e.Commands[cmd]
 		if !ok && cmd != "" {
-			out = invalid
+			out = p.Invalid
 		}
 		out = strings.ReplaceAll(out, "\r\n", "\n")
 		if out != "" && !strings.HasSuffix(out, "\n") {

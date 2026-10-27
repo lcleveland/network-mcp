@@ -14,6 +14,7 @@ import (
 	"github.com/lcleveland/network-mcp/internal/config"
 	"github.com/lcleveland/network-mcp/internal/creds"
 	"github.com/lcleveland/network-mcp/internal/inventory"
+	"github.com/lcleveland/network-mcp/internal/platform"
 	"github.com/lcleveland/network-mcp/internal/sshcli"
 )
 
@@ -47,6 +48,7 @@ type gated struct {
 	dev  *inventory.Device
 	addr netip.Addr
 	ref  string
+	plat platform.Device
 }
 
 // gate looks a device up and runs the connect gates. Refusals are audited.
@@ -64,7 +66,7 @@ func (d Deps) gate(ctx context.Context, name string) (*gated, error) {
 	if ref == "" {
 		return nil, errors.New("no read credential configured (credentials.default.read_ref)")
 	}
-	return &gated{dev, addr, ref}, nil
+	return &gated{dev, addr, ref, platform.Resolve(dev.Platform, d.Config.File.Platforms)}, nil
 }
 
 // open reads the credential fresh and connects.
@@ -75,7 +77,7 @@ func (d Deps) open(ctx context.Context, g *gated) (*sshcli.Session, error) {
 	}
 	return sshcli.Open(ctx, sshcli.Target{
 		Addr: g.addr, Port: g.dev.Port, KnownHosts: d.Config.KnownHosts,
-		Cred: c, Timeout: d.Config.RequestTimeout,
+		Cred: c, Timeout: d.Config.RequestTimeout, Driver: g.plat.Driver,
 	})
 }
 

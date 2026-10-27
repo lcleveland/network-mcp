@@ -3,6 +3,7 @@ module github.com/lcleveland/network-mcp
 go 1.26.0
 
 require (
+	github.com/google/jsonschema-go v0.4.3
 	github.com/modelcontextprotocol/go-sdk v1.8.0
 	github.com/scrapli/scrapligo v1.4.3
 	golang.org/x/crypto v0.58.0
@@ -11,7 +12,6 @@ require (
 
 require (
 	github.com/creack/pty v1.1.23 // indirect
-	github.com/google/jsonschema-go v0.4.3 // indirect
 	github.com/segmentio/asm v1.1.3 // indirect
 	github.com/segmentio/encoding v0.5.4 // indirect
 	github.com/sirikothe/gotextfsm v1.0.1-0.20200816110946-6aa2cfd355e4 // indirect
