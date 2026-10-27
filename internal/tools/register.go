@@ -9,6 +9,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/lcleveland/network-mcp/internal/audit"
+	"github.com/lcleveland/network-mcp/internal/change"
 	"github.com/lcleveland/network-mcp/internal/config"
 	"github.com/lcleveland/network-mcp/internal/creds"
 	"github.com/lcleveland/network-mcp/internal/inventory"
@@ -25,6 +26,8 @@ type Deps struct {
 	Audit  *audit.Log
 	Log    *slog.Logger
 	Lookup inventory.Lookup
+	// Changes holds plans; Register creates it when nil.
+	Changes *change.Store
 }
 
 // Register adds every enabled tool and returns how many it added.
@@ -32,12 +35,19 @@ func Register(s *mcp.Server, d Deps) int {
 	if d.Log == nil {
 		d.Log = slog.New(slog.DiscardHandler)
 	}
+	if d.Changes == nil {
+		d.Changes = change.NewStore()
+	}
 	registerStatus(s, d)
 	n := 1
 	if d.Config.Enabled("cli") {
 		registerShow(s, d)
 		registerConfig(s, d)
 		n += 2
+	}
+	if d.Config.Enabled("change") { // needs --allow-config
+		registerChange(s, d)
+		n++
 	}
 	return n
 }

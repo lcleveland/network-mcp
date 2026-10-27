@@ -19,12 +19,14 @@ let
   groups = [
     "core"
     "cli"
+    "change"
   ];
   isLoopback = a: a == "::1" || a == "localhost" || lib.hasPrefix "127." a;
   inStore = p: p != null && lib.hasPrefix builtins.storeDir p;
   staticUser = cfg.user != null;
   secretPaths =
     lib.attrValues cfg.credentials ++ optional (cfg.bearerTokenFile != null) cfg.bearerTokenFile;
+  writeRefs = map (r: r.write_ref) (builtins.filter (r: r ? write_ref) (cfg.settings.rules or [ ]));
   configFile =
     if cfg.configFile != null then cfg.configFile else yaml.generate "network-mcp.yaml" cfg.settings;
 
@@ -47,8 +49,11 @@ let
     cfg.requestTimeout
     "--log-level"
     cfg.logLevel
+    "--max-pending-changes"
+    (toString cfg.maxPendingChanges)
   ]
   ++ optional cfg.allowAdhoc "--allow-adhoc"
+  ++ optional cfg.allowConfig "--allow-config"
   ++ optionals (cfg.knownHostsFile != null) [
     "--known-hosts"
     cfg.knownHostsFile
@@ -119,6 +124,22 @@ in
         Accept an IP literal inside `settings.adhoc_prefixes` as a device
         (generic read-only driver, credentials from the `adhoc` rule).
       '';
+    };
+
+    allowConfig = mkOption {
+      type = types.bool;
+      default = false;
+      description = ''
+        Register `network_change`, which plans config changes on IOS-XE and
+        NX-OS devices with each device's `write_ref` behind a management-plane
+        denylist. Every `write_ref` named in `settings.rules` must be in
+        `credentials`.
+      '';
+    };
+    maxPendingChanges = mkOption {
+      type = types.ints.positive;
+      default = 1;
+      description = "Applied but unconfirmed changes allowed at once.";
     };
 
     listenAddress = mkOption {
@@ -218,6 +239,10 @@ in
           message = "services.network-mcp.settings.management_prefixes is empty; the server connects only to devices inside them.";
         }
         {
+          assertion = !cfg.allowConfig || cfg.configFile != null || lib.all (r: cfg.credentials ? ${r}) writeRefs;
+          message = "services.network-mcp.allowConfig: every write_ref in settings.rules needs an entry in credentials.";
+        }
+        {
           assertion = !staticUser || cfg.group != null;
           message = "services.network-mcp.group must be set when user is set.";
         }
@@ -229,7 +254,8 @@ in
 
       warnings =
         optional (cfg.openFirewall && isLoopback cfg.listenAddress)
-          "services.network-mcp.openFirewall has no effect while listenAddress is loopback (${cfg.listenAddress}).";
+          "services.network-mcp.openFirewall has no effect while listenAddress is loopback (${cfg.listenAddress})."
+        ++ optional cfg.allowConfig "services.network-mcp.allowConfig is on: MCP clients can plan configuration changes on devices with a write_ref.";
 
       users = mkIf staticUser {
         users.${cfg.user} = {

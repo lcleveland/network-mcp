@@ -2,9 +2,11 @@ package tools
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/netip"
 	"os"
@@ -50,6 +52,10 @@ type setup struct {
 	platform  string
 	platforms map[string]platform.Config
 	adhoc     bool
+	// change tests
+	allowConfig bool
+	rules       []config.Rule // appended to the default and adhoc rules
+	auditW      io.Writer     // replaces the audit buffer
 }
 
 func startWith(t *testing.T, su setup) *env {
@@ -77,9 +83,11 @@ func startWith(t *testing.T, su setup) *env {
 			},
 			Platforms: su.platforms,
 		},
-		AllowAdhoc: su.adhoc,
+		AllowAdhoc: su.adhoc, AllowConfig: su.allowConfig, MaxPendingChanges: 1,
 	}
+	cfg.File.Rules = append(cfg.File.Rules, su.rules...)
 	os.WriteFile(filepath.Join(dir, "adhoc-read"), []byte(`{"username":"adhoc","password":"`+secret+`"}`), 0o400)
+	os.WriteFile(filepath.Join(dir, "ssh-write"), []byte(`{"username":"mcp-write","password":"`+secret+`"}`), 0o400)
 	inv, err := inventory.Load(cfg)
 	if err != nil {
 		t.Fatal(err)
@@ -88,7 +96,7 @@ func startWith(t *testing.T, su setup) *env {
 	dns := map[string]string{"dev1.example.net": fake.Host, "far.example.net": "203.0.113.9"}
 	s := mcp.NewServer(&mcp.Implementation{Name: "test"}, nil)
 	e.deps = Deps{
-		Config: cfg, Inv: inv, Audit: audit.New(e.audit),
+		Config: cfg, Inv: inv, Audit: audit.New(cmp.Or[io.Writer](su.auditW, e.audit)),
 		Log: slog.New(slog.NewTextHandler(e.log, &slog.HandlerOptions{Level: slog.LevelDebug})),
 		Lookup: func(_ context.Context, h string) ([]netip.Addr, error) {
 			return []netip.Addr{netip.MustParseAddr(dns[h])}, nil

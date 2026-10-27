@@ -79,6 +79,8 @@ in
     check "--tool-groups core,cli" cmd
     refute "--known-hosts" cmd
     refute "--allow-adhoc" cmd
+    refute "--allow-config" cmd
+    check "--max-pending-changes 1" cmd
     refute "http-auth-token" creds
   '';
 
@@ -96,14 +98,24 @@ in
         toolGroups = [ "core" ];
         requestTimeout = "10s";
         allowAdhoc = true;
+        allowConfig = true;
+        maxPendingChanges = 2;
         logLevel = "debug";
         extraArgs = [ "--stdio=false" ];
         settings = {
           management_prefixes = [ "192.0.2.0/24" ];
-          rules = [ { match = "default"; read_ref = "ssh-read"; } ];
+          rules = [
+            {
+              match = "default";
+              read_ref = "ssh-read";
+              write_ref = "ssh-other";
+            }
+          ];
         };
       }
       ''
+        check "--allow-config" cmd
+        check "--max-pending-changes 2" cmd
         check "--addr 0.0.0.0:9000" cmd
         check "--known-hosts /etc/network-mcp/known_hosts" cmd
         check "--tool-groups core " cmd
@@ -135,6 +147,29 @@ in
       lib.any (lib.hasInfix "openFirewall has no effect") config.warnings
       || throw "no openFirewall warning";
     pkgs.runCommand "network-mcp-firewall-warns" { } "touch $out";
+
+  module-allow-config-warns =
+    let
+      config = evalModule (base {
+        allowConfig = true;
+      });
+    in
+    assert
+      lib.any (lib.hasInfix "allowConfig is on") config.warnings || throw "no allowConfig warning";
+    pkgs.runCommand "network-mcp-allow-config-warns" { } "touch $out";
+
+  module-write-ref-missing = mustFail "write-ref-missing" {
+    allowConfig = true;
+    settings = {
+      management_prefixes = [ "192.0.2.0/24" ];
+      rules = [
+        {
+          match = "default";
+          write_ref = "ssh-write";
+        }
+      ];
+    };
+  } "every write_ref";
 
   module-credential-in-store = mustFail "credential-in-store" {
     credentials.ssh-read = "${builtins.storeDir}/abc-ssh-read";

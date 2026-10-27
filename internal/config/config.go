@@ -23,12 +23,13 @@ import (
 
 	"gopkg.in/yaml.v3"
 
+	"github.com/lcleveland/network-mcp/internal/change/deny"
 	"github.com/lcleveland/network-mcp/internal/creds"
 	"github.com/lcleveland/network-mcp/internal/platform"
 )
 
 // Groups are the tool groups --tool-groups may name. core is always on.
-var Groups = []string{"core", "cli"}
+var Groups = []string{"core", "cli", "change"}
 
 type Config struct {
 	ConfigPath     string
@@ -45,6 +46,9 @@ type Config struct {
 	HTTPAuthToken string // never logged
 	AllowAdhoc    bool
 
+	AllowConfig       bool // registers the change group; off by default
+	MaxPendingChanges int
+
 	File File
 }
 
@@ -57,6 +61,7 @@ type File struct {
 	Rules              []Rule         `yaml:"rules"`
 	// keyed by the sources' platform value, case-insensitively
 	Platforms map[string]platform.Config `yaml:"platforms"`
+	WriteDeny []string                   `yaml:"write_deny"` // adds to the compiled-in write denylist, never removes
 }
 
 // Source is one inventory source. file takes path; netbox takes the rest.
@@ -115,6 +120,8 @@ func (c *Config) LogValue() slog.Value {
 		slog.String("addr", c.Addr),
 		slog.Bool("http_auth_set", c.HTTPAuthToken != ""),
 		slog.Bool("allow_adhoc", c.AllowAdhoc),
+		slog.Bool("allow_config", c.AllowConfig),
+		slog.Int("max_pending_changes", c.MaxPendingChanges),
 	)
 }
 
@@ -140,6 +147,8 @@ func Parse(args []string, getenv func(string) string) (*Config, error) {
 	fs.StringVar(&c.Path, "path", "/mcp", "HTTP MCP endpoint path")
 	fs.StringVar(&hauth, "http-auth-token-file", getenv("NETWORK_MCP_HTTP_AUTH_TOKEN_FILE"), "file holding the bearer token HTTP clients must send (env NETWORK_MCP_HTTP_AUTH_TOKEN_FILE)")
 	fs.BoolVar(&c.AllowAdhoc, "allow-adhoc", false, "accept an IP literal inside adhoc_prefixes as a device (generic driver, adhoc rule)")
+	fs.BoolVar(&c.AllowConfig, "allow-config", false, "enable network_change, which plans config changes with each device's write_ref")
+	fs.IntVar(&c.MaxPendingChanges, "max-pending-changes", 1, "applied but unconfirmed changes allowed at once")
 	fs.BoolVar(&c.ShowVersion, "version", false, "print version and exit")
 	if err := fs.Parse(args); err != nil {
 		return nil, err
@@ -152,6 +161,9 @@ func Parse(args []string, getenv func(string) string) (*Config, error) {
 	}
 	if err := c.LogLevel.UnmarshalText([]byte(logLevel)); err != nil {
 		return nil, fmt.Errorf("--log-level: %w", err)
+	}
+	if c.MaxPendingChanges < 1 {
+		return nil, errors.New("--max-pending-changes must be at least 1")
 	}
 	if c.RequestTimeout <= 0 {
 		return nil, errors.New("--request-timeout must be positive")
@@ -185,6 +197,16 @@ func Parse(args []string, getenv func(string) string) (*Config, error) {
 	}
 	if c.AllowAdhoc && len(c.File.AdhocPrefixes) == 0 {
 		return nil, errors.New("--allow-adhoc needs adhoc_prefixes in the config file")
+	}
+	if c.AllowConfig { // only existence and mode: the secret is read fresh per call
+		for _, r := range c.File.Rules {
+			if r.WriteRef == "" {
+				continue
+			}
+			if err := creds.Private(c.CredentialsDir, r.WriteRef); err != nil {
+				return nil, fmt.Errorf("--allow-config: %w", err)
+			}
+		}
 	}
 	return &c, nil
 }
@@ -265,6 +287,9 @@ func ParseFile(b []byte) (File, error) {
 			return f, fmt.Errorf("rules[%d]: snmp.version %q (want v2c or v3)", i, r.SNMP.Version)
 		}
 	}
+	if err := deny.Validate(f.WriteDeny); err != nil {
+		return f, err
+	}
 	return f, platform.Validate(f.Platforms)
 }
 
@@ -305,8 +330,11 @@ func validSource(s *Source, seen map[string]bool) error {
 	return nil
 }
 
-// Enabled reports whether a tool group is on.
+// Enabled reports whether a tool group is on. change also needs --allow-config.
 func (c *Config) Enabled(group string) bool {
+	if group == "change" && !c.AllowConfig {
+		return false
+	}
 	return group == "core" || len(c.Groups) == 0 || slices.Contains(c.Groups, group)
 }
 

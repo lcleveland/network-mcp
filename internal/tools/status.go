@@ -29,6 +29,7 @@ type StatusOutput struct {
 	Version     string             `json:"version,omitempty"`
 	Groups      []string           `json:"groups,omitempty"`
 	Sources     []inventory.Health `json:"sources,omitempty"`
+	Changes     *ChangeStatus      `json:"changes,omitempty"` // with --allow-config
 	Device      string             `json:"device,omitempty"`
 	Address     string             `json:"address,omitempty"`
 	Checks      []Check            `json:"checks,omitempty"`
@@ -42,7 +43,8 @@ func registerStatus(s *mcp.Server, d Deps) {
 	mcp.AddTool(s, &mcp.Tool{
 		Name:  "network_status",
 		Title: "Server and device connectivity check",
-		Description: "Without device: the server version, enabled tool groups and the health of each inventory source.\n\n" +
+		Description: "Without device: the server version, enabled tool groups, the health of each inventory source and, " +
+			"with network_change enabled, the pending plan count.\n\n" +
 			"With device: each connect check in order (management-prefix gate, TCP, pinned host key, read-credential auth, " +
 			"prompt detected), stopping at the first failure. It runs no CLI command. " +
 			"Call this first when network_show fails.\n\n" + UntrustedNote,
@@ -55,7 +57,11 @@ func registerStatus(s *mcp.Server, d Deps) {
 					groups = append(groups, g)
 				}
 			}
-			return nil, StatusOutput{Version: version.Version, Groups: groups, Sources: d.Inv.Health(ctx)}, nil
+			out := StatusOutput{Version: version.Version, Groups: groups, Sources: d.Inv.Health(ctx)}
+			if d.Config.AllowConfig {
+				out.Changes = d.changeCount()
+			}
+			return nil, out, nil
 		}
 		g, err := d.gate(ctx, in.Device)
 		if g == nil {

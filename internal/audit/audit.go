@@ -18,6 +18,17 @@ type Event struct {
 	Address string    `json:"address,omitempty"`
 	Command string    `json:"command,omitempty"`
 	CredRef string    `json:"cred_ref,omitempty"` // the ref name, never its contents
+
+	// write pipeline (#10 §8)
+	MCPSession string   `json:"mcp_session,omitempty"`
+	Client     string   `json:"client,omitempty"`
+	Reason     string   `json:"reason,omitempty"`
+	Platform   string   `json:"platform,omitempty"` // the driver
+	HostKey    string   `json:"host_key,omitempty"`
+	Username   string   `json:"username,omitempty"`
+	PlanID     string   `json:"plan_id,omitempty"`
+	Commands   []string `json:"commands,omitempty"` // redacted
+	PreHash    string   `json:"pre_hash,omitempty"`
 }
 
 type Log struct {
