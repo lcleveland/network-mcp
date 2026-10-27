@@ -55,6 +55,9 @@ type setup struct {
 	second    string // YAML for a second file source, merged after the first
 	dests     map[string]config.Destination
 	auditW    io.Writer // default: e.audit
+	// change tests
+	allowConfig bool
+	rules       []config.Rule // appended to the default and adhoc rules
 }
 
 func startWith(t *testing.T, su setup) *env {
@@ -83,14 +86,16 @@ func startWith(t *testing.T, su setup) *env {
 			Platforms:    su.platforms,
 			Destinations: su.dests,
 		},
-		AllowAdhoc: su.adhoc,
+		AllowAdhoc: su.adhoc, AllowConfig: su.allowConfig, MaxPendingChanges: 1,
 	}
 	if su.second != "" {
 		p := filepath.Join(dir, "second.yaml")
 		os.WriteFile(p, []byte(su.second), 0o600)
 		cfg.File.Sources = append(cfg.File.Sources, config.Source{Name: "second", Type: "file", Path: p})
 	}
+	cfg.File.Rules = append(cfg.File.Rules, su.rules...)
 	os.WriteFile(filepath.Join(dir, "adhoc-read"), []byte(`{"username":"adhoc","password":"`+secret+`"}`), 0o400)
+	os.WriteFile(filepath.Join(dir, "ssh-write"), []byte(`{"username":"mcp-write","password":"`+secret+`"}`), 0o400)
 	inv, err := inventory.Load(cfg)
 	if err != nil {
 		t.Fatal(err)

@@ -4,6 +4,7 @@ package server
 
 import (
 	"context"
+	"strings"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
@@ -20,8 +21,13 @@ const instructions = "Tools for reading network devices over SSH. The server con
 
 // New builds the server with the enabled tools and reports how many.
 func New(d tools.Deps) (*mcp.Server, int) {
+	ins := instructions
+	if d.Config.Enabled("change") {
+		ins = strings.Replace(ins, "This server is read-only. ", "network_change is enabled: it plans config changes for one "+
+			"device at a time, behind a management-plane denylist, and every action is audited. ", 1)
+	}
 	s := mcp.NewServer(&mcp.Implementation{Name: "network-mcp", Title: "Network devices", Version: version.Version},
-		&mcp.ServerOptions{Logger: d.Log, Instructions: instructions})
+		&mcp.ServerOptions{Logger: d.Log, Instructions: ins})
 	return s, tools.Register(s, d)
 }
 

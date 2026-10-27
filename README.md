@@ -2,7 +2,7 @@
 
 An MCP server, written in Go, that reads network devices over SSH. It is general-purpose: any SSH device works through the generic driver, and IOS-XE and NX-OS have first-class drivers. SNMP, config export and gated writes come in later releases. It serves stdio or streamable HTTP and is packaged as a Nix flake with a NixOS module.
 
-The server is read-only. Before anything reaches a device, it checks four things:
+The server is read-only unless `--allow-config` enables change plans (below). Before anything reaches a device, it checks four things:
 - the device is in the inventory and opted in;
 - every address the device resolves to is inside `management_prefixes`;
 - the device's SSH host key matches the `--known-hosts` file (no trust-on-first-use);
@@ -19,6 +19,9 @@ The server is read-only. Before anything reaches a device, it checks four things
 | export | `network_export` | `devices` (at most 50), `kinds: [running, startup]`, `destination`, `reason`. Writes `<device>/<kind>.txt` to a configured destination; returns per device and kind `ref`, `changed`, `sha256` or an error, never config text. Absent without `destinations`. |
 
 **Export.** On demand only; history lives in the destination. Configs are redacted before any sink unless the destination sets `redact: false`, which is logged on every export. A device is written whole or not at all, an identical config is not rewritten (`changed: false`), and every export is audit-logged (destination, devices, kinds, hashes, refs, `redact`, reason, session) before anything is written; if the audit line cannot be written the export is refused. Device names with `/`, `\`, `..`, control characters or a leading `.`, and IP literals, are refused. The `dir` sink writes a temp file, fsyncs and renames, confined to its root.
+| change | `network_change` | Only with `--allow-config`. `plan`: `device`, `lines` (≤200), `reason`; returns `plan_id`, the lines as a `+` diff, `pre_hash`, `expires`. `status`: this session's plans and the pending count. Apply, confirm, rollback and save come later. |
+
+**Change plans.** A plan is for one IOS-XE or NX-OS device with a `write_ref` (classic IOS, generic SSH and ad-hoc devices are refused; the `read_ref` is never used). Lines are printable ASCII without `?` or `|`; `do`, `end`, `exit` and `configure` are refused. The server reads the unredacted running config with the write ref, hashes it (SHA-256 after dropping volatile lines, CR, ANSI, trailing spaces and blank lines; the text never leaves the server) and refuses the whole plan if any line matches the management-plane denylist: each typed token is compared as a prefix of the entry's token, so abbreviations match, after stripping a leading `no`/`default`. Compiled-in entries: `aaa`, `username`, `enable`, `line`, `ip ssh`, `crypto`, `snmp-server`, `boot`, `reload`, `erase`, `config-register`, `alias`, `event manager`, `kron`, `archive`, `parser`, `configuration mode`, `privilege`, `banner`, `macro`, `ip http`, `restconf`, `netconf-yang`, `ip scp`/`ftp`/`tftp`, `logging`, `license`, `key`, `tacacs`, `radius`, `radius-server`, `service internal`, `gnxi`, `checkpoint`, `rollback`, `feature`; `write_deny` adds more. From the running config it also denies the ACLs named by `access-class`, `snmp-server` or the connect interface's filters, the management VRF (`vrf context management`, `vrf definition Mgmt-*`, the connect interface's VRF) and its routes, and the interface that owns the address the server dials. The plan is kept in memory for 10 minutes, bound to the MCP session, the device address, its pinned host key, driver, lines, hash, write ref and reason, and is single-use; a restart voids it. Plans, denials, refusals and expiries are audit-logged; if the audit line cannot be written the plan is refused. The device's config is not touched.
 
 **Config reads.** `network_config` sends a command the server picks, never user text, so it skips the read gate's deny list (which blocks config dumps in `network_show`). IOS, IOS-XE and NX-OS use `show running-config` and `show startup-config`; any other platform needs `platforms.<value>.config.running` / `.startup`, which must stay inside the read gate's character set, and is refused until set. Redaction patterns are Cisco-shaped; elsewhere only the catch-all (`password`, `secret`, `key`, `community`, `psk`, `passphrase`) is likely to match, so give the server a read-only device account.
 
@@ -50,8 +53,10 @@ Results are JSON built by the server. Device text appears only in the fields lis
 | `--config` | `NETWORK_MCP_CONFIG` | required |
 | `--credentials-dir` | `CREDENTIALS_DIRECTORY` | required |
 | `--known-hosts` | `NETWORK_MCP_KNOWN_HOSTS` | required if any device uses SSH |
-| `--tool-groups` | | all (`cli`, `export`; `core` is always on) |
+| `--tool-groups` | | all (`cli`, `export`, `change`; `core` is always on) |
 | `--allow-adhoc` | | off; needs `adhoc_prefixes` |
+| `--allow-config` | | off; registers `network_change` and refuses startup unless every rule's `write_ref` file exists with no group or world access |
+| `--max-pending-changes` | | 1 |
 | `--request-timeout`, `--log-level` | `NETWORK_MCP_LOG_LEVEL` | `30s`, `info` |
 | `--stdio` / `--http` | | stdio |
 | `--addr`, `--path` | | `127.0.0.1:8232`, `/mcp` |
@@ -89,6 +94,7 @@ platforms:                             # optional; keys match the platform value
     config: {running: show running-config, startup: show startup-config} # for network_config
 destinations:                          # optional; none means no network_export
   local: {type: dir, path: /var/lib/network-mcp/export}  # redact: false is allowed, off by default
+write_deny: [spanning-tree]            # optional; adds to the network_change denylist, never removes
 ```
 
 Getter commands pass the same read gate. Allow and deny entries only add: none removes a compiled-in deny or widens the character set, and an unknown driver or profile, or a getter command the gate refuses, stops startup.

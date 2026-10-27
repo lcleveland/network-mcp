@@ -52,6 +52,22 @@ func Token(dir, ref string) (string, error) {
 	return t.Token, nil
 }
 
+// Private checks, without reading it, that ref is a regular file only its
+// owner can access.
+func Private(dir, ref string) error {
+	if !ValidRef(ref) {
+		return fmt.Errorf("credential ref %q: names may use only letters, digits, . _ -", ref)
+	}
+	fi, err := os.Stat(filepath.Join(dir, ref))
+	if err != nil {
+		return fmt.Errorf("credential ref %q: %w", ref, errors.Unwrap(err))
+	}
+	if !fi.Mode().IsRegular() || fi.Mode().Perm()&0o077 != 0 {
+		return fmt.Errorf("credential ref %q: must be a regular file with no group or world access, not %v", ref, fi.Mode())
+	}
+	return nil
+}
+
 func load(dir, ref string, v any, shape string) error {
 	if !ValidRef(ref) {
 		return fmt.Errorf("credential ref %q: names may use only letters, digits, . _ -", ref)

@@ -10,6 +10,8 @@ import (
 	"testing"
 	"time"
 
+	"golang.org/x/crypto/ssh"
+
 	"github.com/lcleveland/network-mcp/internal/creds"
 	"github.com/lcleveland/network-mcp/internal/sshfake"
 )
@@ -18,6 +20,21 @@ func target(s *sshfake.Server, user string) Target {
 	return Target{
 		Addr: netip.MustParseAddr(s.Host), Port: s.Port, KnownHosts: s.KnownHosts,
 		Cred: creds.Cred{Username: user, Password: "test-password"}, Timeout: 5 * time.Second,
+	}
+}
+
+func TestHostKey(t *testing.T) {
+	s := sshfake.Start(t, &sshfake.Engine{Hostname: "dev1"}, sshfake.Options{})
+	a := netip.MustParseAddr(s.Host)
+	fp, err := HostKey(s.KnownHosts, a, s.Port)
+	if err != nil || fp != ssh.FingerprintSHA256(s.HostKey) {
+		t.Fatalf("%q %v", fp, err)
+	}
+	if _, err := HostKey(s.KnownHosts, a, s.Port+1); err == nil {
+		t.Fatal("an unpinned port has a key")
+	}
+	if fp2, _ := HostKey(sshfake.WrongKnownHosts(t, s.Addr), a, s.Port); fp2 == fp || fp2 == "" {
+		t.Fatalf("a different pin gave %q", fp2)
 	}
 }
 

@@ -159,3 +159,38 @@ destinations:
 		t.Errorf("%+v", f.Rules)
 	}
 }
+
+func TestAllowConfig(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+	os.WriteFile(path, []byte(good+"  - {match: {platform: nxos}, write_ref: ssh-write}\nwrite_deny: [spanning-tree]\n"), 0o600)
+	base := []string{"--config", path, "--credentials-dir", dir}
+	noenv := func(string) string { return "" }
+
+	c, err := Parse(append(base, "--tool-groups", "core,change"), noenv)
+	if err != nil || c.Enabled("change") || c.MaxPendingChanges != 1 || c.File.WriteDeny[0] != "spanning-tree" {
+		t.Fatalf("change needs --allow-config; a missing write ref is fine without it: %+v %v", c, err)
+	}
+	if _, err := Parse(append(base, "--allow-config"), noenv); err == nil || !strings.Contains(err.Error(), "ssh-write") {
+		t.Fatalf("missing write ref: %v", err)
+	}
+	ref := filepath.Join(dir, "ssh-write")
+	os.WriteFile(ref, []byte(`{"username":"w","password":"write-secret"}`), 0o600)
+	for _, mode := range []os.FileMode{0o440, 0o404, 0o602} {
+		os.Chmod(ref, mode)
+		if _, err := Parse(append(base, "--allow-config"), noenv); err == nil || strings.Contains(err.Error(), "write-secret") {
+			t.Errorf("mode %v: %v", mode, err)
+		}
+	}
+	os.Chmod(ref, 0o400)
+	c, err = Parse(append(base, "--allow-config", "--max-pending-changes", "3"), noenv)
+	if err != nil || !c.Enabled("change") || c.MaxPendingChanges != 3 {
+		t.Fatalf("%+v %v", c, err)
+	}
+	if _, err := Parse(append(base, "--max-pending-changes", "0"), noenv); err == nil {
+		t.Fatal("--max-pending-changes 0 accepted")
+	}
+	if _, err := ParseFile([]byte("management_prefixes: [192.0.2.0/24]\nwrite_deny: ['a?']")); err == nil {
+		t.Fatal("bad write_deny accepted")
+	}
+}

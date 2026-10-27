@@ -14,6 +14,7 @@ import (
 	"net"
 	"net/netip"
 	"regexp"
+	"slices"
 	"strings"
 	"time"
 
@@ -155,6 +156,29 @@ func classify(err error) Stage {
 		return StageAuth
 	}
 	return StageConnect
+}
+
+// HostKey returns the SHA256 fingerprints of the keys known_hosts pins for
+// addr:port, sorted and comma-joined, without dialing. Open accepts only
+// these keys, so a plan can bind them.
+func HostKey(knownHosts string, addr netip.Addr, port int) (string, error) {
+	cb, err := knownhosts.New(knownHosts)
+	if err != nil {
+		return "", err
+	}
+	// a key nobody pins makes the callback list the pinned ones
+	probe, _ := ssh.NewPublicKey(ed25519.NewKeyFromSeed(make([]byte, ed25519.SeedSize)).Public())
+	ap := netip.AddrPortFrom(addr.Unmap(), uint16(port))
+	var ke *knownhosts.KeyError
+	if err := cb(ap.String(), net.TCPAddrFromAddrPort(ap), probe); !errors.As(err, &ke) || len(ke.Want) == 0 {
+		return "", fmt.Errorf("no host key is pinned for %s", ap)
+	}
+	var fps []string
+	for _, k := range ke.Want {
+		fps = append(fps, ssh.FingerprintSHA256(k.Key))
+	}
+	slices.Sort(fps)
+	return strings.Join(slices.Compact(fps), ","), nil
 }
 
 func (s *Session) Prompt() string { return s.prompt }

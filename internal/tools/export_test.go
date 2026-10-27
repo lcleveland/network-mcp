@@ -172,10 +172,6 @@ func TestExportBig(t *testing.T) {
 	}
 }
 
-type failWriter struct{}
-
-func (failWriter) Write([]byte) (int, error) { return 0, errors.New("disk full") }
-
 func TestExportAuditFailsClosed(t *testing.T) {
 	root := filepath.Join(t.TempDir(), "export")
 	e := startWith(t, setup{auditW: failWriter{}, dests: map[string]config.Destination{"local": {Type: "dir", Path: root}}, platform: "cisco_iosxe",
