@@ -1,6 +1,7 @@
 // Package creds reads named credential refs from the credentials directory
-// ($CREDENTIALS_DIRECTORY under systemd). A ref is read per use and never
-// cached or logged.
+// ($CREDENTIALS_DIRECTORY under systemd). A secret ref is read per use and
+// never cached or logged; prefixes_ref, structure rather than a login, is
+// read once at startup.
 package creds
 
 import (
@@ -8,6 +9,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/netip"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -171,6 +173,17 @@ func S3(dir, ref string) (S3Key, error) {
 		return S3Key{}, fmt.Errorf("credential ref %q: needs access_key_id and secret_access_key", ref)
 	}
 	return k, nil
+}
+
+// Prefixes loads JSON {management_prefixes, adhoc_prefixes?} from ref, once
+// at startup. A bad CIDR fails as bad JSON, so no prefix reaches the error.
+func Prefixes(dir, ref string) (mgmt, adhoc []netip.Prefix, err error) {
+	var p struct {
+		Management []netip.Prefix `json:"management_prefixes"`
+		Adhoc      []netip.Prefix `json:"adhoc_prefixes"`
+	}
+	err = load(dir, ref, &p, "{management_prefixes: [CIDR...], adhoc_prefixes?: [CIDR...]}")
+	return p.Management, p.Adhoc, err
 }
 
 func load(dir, ref string, v any, shape string) error {

@@ -97,6 +97,12 @@ in
         The config file, rendered as YAML and passed with `--config`. It holds
         structure and credential ref names only, never secrets.
 
+        To keep the prefixes out of the world-readable Nix store, set
+        `prefixes_ref` instead of `management_prefixes` and `adhoc_prefixes`
+        (not both): a ref name, with an entry in `credentials`, holding JSON
+        `{"management_prefixes": [...], "adhoc_prefixes": [...]}`
+        (`adhoc_prefixes` optional).
+
         Export destination paths (`dir`, and `git`'s local repo) must live
         under `/var/lib/network-mcp/` (the unit's `StateDirectory`); the
         hardened unit can write nowhere else. A `git` or `s3` destination's
@@ -143,8 +149,9 @@ in
       type = types.bool;
       default = false;
       description = ''
-        Accept an IP literal inside `settings.adhoc_prefixes` as a device
-        (generic read-only driver, credentials from the `adhoc` rule).
+        Accept an IP literal inside `settings.adhoc_prefixes` (or the
+        `adhoc_prefixes` of `settings.prefixes_ref`) as a device (generic
+        read-only driver, credentials from the `adhoc` rule).
       '';
     };
 
@@ -277,8 +284,18 @@ in
           message = "services.network-mcp.listenAddress is ${cfg.listenAddress} (not loopback) without bearerTokenFile; the server refuses to start unauthenticated on a network address.";
         }
         {
-          assertion = cfg.configFile != null || (cfg.settings.management_prefixes or [ ]) != [ ];
-          message = "services.network-mcp.settings.management_prefixes is empty; the server connects only to devices inside them.";
+          assertion =
+            cfg.configFile != null
+            || (cfg.settings.management_prefixes or [ ]) != [ ]
+            || cfg.settings ? prefixes_ref;
+          message = "services.network-mcp.settings.management_prefixes is empty and prefixes_ref is unset; the server connects only to devices inside them.";
+        }
+        {
+          assertion =
+            cfg.configFile != null
+            || !(cfg.settings ? prefixes_ref)
+            || cfg.credentials ? ${cfg.settings.prefixes_ref};
+          message = "services.network-mcp.settings.prefixes_ref needs an entry in credentials.";
         }
         {
           assertion =
