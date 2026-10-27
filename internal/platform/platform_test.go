@@ -91,3 +91,18 @@ func TestRevert(t *testing.T) {
 		}
 	}
 }
+
+func TestArchivePath(t *testing.T) {
+	if err := Validate(map[string]Config{"cisco_iosxe": {ArchivePath: "flash:archive"}}); err != nil {
+		t.Fatal(err)
+	}
+	for _, bad := range []map[string]Config{
+		{"cisco_nxos": {ArchivePath: "bootflash:archive"}},
+		{"cisco_iosxe": {ArchivePath: "flash:a b"}},
+		{"cisco_iosxe": {ArchivePath: "archive"}},
+	} {
+		if err := Validate(bad); err == nil || !strings.Contains(err.Error(), "archive_path") {
+			t.Errorf("%v: %v", bad, err)
+		}
+	}
+}

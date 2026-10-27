@@ -38,8 +38,8 @@ func checkReason(r string) error {
 func cleanReason(r string) string { return output.Cap(output.Sanitize(r), maxReason) }
 
 type ChangeInput struct {
-	Action        string   `json:"action" jsonschema:"plan, apply, confirm, rollback, save or status"`
-	Device        string   `json:"device,omitempty" jsonschema:"plan, save: device name from the inventory"`
+	Action        string   `json:"action" jsonschema:"plan, apply, confirm, rollback, save, archive or status"`
+	Device        string   `json:"device,omitempty" jsonschema:"plan, save, archive: device name from the inventory"`
 	Lines         []string `json:"lines,omitempty" jsonschema:"plan: config lines as typed after configure terminal, at most 200"`
 	Reason        string   `json:"reason,omitempty" jsonschema:"every action but status: why; required and audited"`
 	PlanID        string   `json:"plan_id,omitempty" jsonschema:"apply: the plan_id from plan"`
@@ -197,7 +197,7 @@ func registerChange(s *mcp.Server, d Deps) {
 	if err != nil {
 		panic(err)
 	}
-	in.Properties["action"].Enum = []any{"plan", "apply", "confirm", "rollback", "status"}
+	in.Properties["action"].Enum = []any{"plan", "apply", "confirm", "rollback", "archive", "status"}
 	if d.Config.AllowSave {
 		in.Properties["action"].Enum = append(in.Properties["action"].Enum, "save")
 	}
@@ -234,6 +234,9 @@ func registerChange(s *mcp.Server, d Deps) {
 			"confirm: change_id. From a new SSH session (proving the device is still reachable), checks post_hash and stops " +
 			"the revert (server-reverted: deletes the checkpoint or snapshot). It does not save.\n\nrollback: change_id. " +
 			"Reverts now and checks pre_hash (server-reverted: then deletes the checkpoint or snapshot).\n\n" + save +
+			"archive: device, reason. Only for IOS-XE on a platform that sets archive_path: configures archive / path " +
+			"<archive_path> so apply can use the device's revert timer. A one-off running-config change, audited, not " +
+			"reverted and not saved; already_configured if the device has an archive path. Plan after it, not before.\n\n" +
 			"status: this session's plans and pending changes; with change_id of a server-reverted change, also the other " +
 			"network-mcp-* checkpoints or snapshots on its device (stale_checkpoints). After a restart there are no change " +
 			"records; list leftovers with network_status and device.\n\n" + UntrustedNote,
@@ -245,7 +248,7 @@ func registerChange(s *mcp.Server, d Deps) {
 			return nil, ChangeOutput{}, errors.New("network_change needs --allow-config")
 		}
 		act := map[string]func(context.Context, string, string, ChangeInput) (ChangeOutput, error){
-			"plan": d.plan, "apply": d.apply, "confirm": d.confirm, "rollback": d.rollback, "save": d.save,
+			"plan": d.plan, "apply": d.apply, "confirm": d.confirm, "rollback": d.rollback, "save": d.save, "archive": d.archive,
 		}[in.Action]
 		switch {
 		case in.Action == "status" && in.ChangeID != "":

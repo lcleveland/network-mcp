@@ -6,6 +6,7 @@ import (
 	"cmp"
 	"fmt"
 	"maps"
+	"regexp"
 	"slices"
 	"strings"
 
@@ -32,7 +33,12 @@ type Config struct {
 	// device's archive revert timer) or server (a flash snapshot the server
 	// restores, for devices without archive path).
 	Revert string `yaml:"revert"`
+	// ArchivePath lets network_change action=archive configure archive /
+	// path <value> (e.g. flash:archive) on an IOS-XE device that lacks it.
+	ArchivePath string `yaml:"archive_path"`
 }
+
+var archivePath = regexp.MustCompile(`^[A-Za-z0-9-]+:[A-Za-z0-9_./-]+$`)
 
 // Revert modes.
 const (
@@ -97,6 +103,7 @@ func with(m map[string]string, kv ...string) map[string]string {
 type Device struct {
 	Driver, Profile string
 	Revert          string // "" means the driver's default
+	ArchivePath     string // "" means the server never configures archive
 	Getters         map[string]string
 	Gate            gate.Ext
 	Config          ConfigCmds
@@ -114,7 +121,7 @@ func Resolve(value string, cfg map[string]Config) Device {
 	var cc ConfigCmds
 	for k, c := range cfg {
 		if strings.EqualFold(k, value) {
-			d.Driver, d.Profile, d.Revert = cmp.Or(c.Driver, d.Driver), cmp.Or(c.Profile, d.Profile), c.Revert
+			d.Driver, d.Profile, d.Revert, d.ArchivePath = cmp.Or(c.Driver, d.Driver), cmp.Or(c.Profile, d.Profile), c.Revert, c.ArchivePath
 			d.Gate, extra, cc = gate.Ext{Allow: c.ReadAllow, Deny: c.ReadDeny}, c.Getters, c.Config
 		}
 	}
@@ -146,6 +153,10 @@ func Validate(cfg map[string]Config) error {
 			return fmt.Errorf("platforms.%s.revert: unknown %q (want %s or %s)", k, c.Revert, RevertDevice, RevertServer)
 		case c.Revert == RevertServer && cmp.Or(c.Driver, Resolve(k, nil).Driver) != IOSXE:
 			return fmt.Errorf("platforms.%s.revert: server is for IOS-XE only (NX-OS is always server-reverted)", k)
+		case c.ArchivePath != "" && cmp.Or(c.Driver, Resolve(k, nil).Driver) != IOSXE:
+			return fmt.Errorf("platforms.%s.archive_path: is for IOS-XE only", k)
+		case c.ArchivePath != "" && !archivePath.MatchString(c.ArchivePath):
+			return fmt.Errorf("platforms.%s.archive_path: %q must be filesystem:path, e.g. flash:archive", k, c.ArchivePath)
 		}
 		seen[l] = true
 		x := gate.Ext{Allow: c.ReadAllow, Deny: c.ReadDeny}
