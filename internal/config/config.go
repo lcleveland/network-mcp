@@ -103,6 +103,24 @@ type Source struct {
 	OptInTag     string            `yaml:"opt_in_tag"`
 	AddressOrder []string          `yaml:"address_order"`
 	Filters      map[string]string `yaml:"filters"` // extra /api/dcim/devices/ query filters
+	// IPAM prefixes that replace the file's management_prefixes at startup
+	ManagementPrefixes *PrefixSelector `yaml:"management_prefixes"`
+}
+
+// PrefixSelector picks NetBox IPAM prefixes by tag or role slug, exactly one.
+type PrefixSelector struct {
+	Tag  string `yaml:"tag"`
+	Role string `yaml:"role"`
+}
+
+// PrefixSource is the netbox source that supplies management prefixes, if any.
+func (f File) PrefixSource() *Source {
+	for i, s := range f.Sources {
+		if s.ManagementPrefixes != nil {
+			return &f.Sources[i]
+		}
+	}
+	return nil
 }
 
 // AddressFields are the NetBox device fields address_order may name.
@@ -239,7 +257,7 @@ func Parse(args []string, getenv func(string) string) (*Config, error) {
 		if c.File.ManagementPrefixes, c.File.AdhocPrefixes, err = creds.Prefixes(c.CredentialsDir, c.File.PrefixesRef); err != nil {
 			return nil, fmt.Errorf("prefixes_ref: %w", err)
 		}
-		if err := checkPrefixes(c.File); err != nil {
+		if err := CheckPrefixes(c.File); err != nil {
 			return nil, fmt.Errorf("prefixes_ref %q: %w", c.File.PrefixesRef, err)
 		}
 	}
@@ -336,7 +354,7 @@ func ParseFile(b []byte) (File, error) {
 	}
 	switch {
 	case f.PrefixesRef == "": // Parse checks a ref's lists once it reads them
-		if err := checkPrefixes(f); err != nil {
+		if err := CheckPrefixes(f); err != nil {
 			return f, err
 		}
 	case f.ManagementPrefixes != nil || f.AdhocPrefixes != nil:
@@ -349,6 +367,15 @@ func ParseFile(b []byte) (File, error) {
 		if err := validSource(&f.Sources[i], seen); err != nil {
 			return f, err
 		}
+	}
+	n := 0
+	for _, s := range f.Sources {
+		if s.ManagementPrefixes != nil {
+			n++
+		}
+	}
+	if n > 1 {
+		return f, errors.New("management_prefixes may be set on one source only")
 	}
 	for i, r := range f.Rules {
 		switch {
@@ -378,9 +405,12 @@ func ParseFile(b []byte) (File, error) {
 	return f, platform.Validate(f.Platforms)
 }
 
-// checkPrefixes names an index, never a prefix: a ref's prefixes stay out of errors.
-func checkPrefixes(f File) error {
+// CheckPrefixes names an index, never a prefix: a ref's prefixes stay out of errors.
+func CheckPrefixes(f File) error {
 	if len(f.ManagementPrefixes) == 0 {
+		if f.PrefixSource() != nil {
+			return nil // NetBox supplies them at startup, which checks adhoc_prefixes again
+		}
 		return errors.New("management_prefixes is empty: the server connects only to devices inside them")
 	}
 	for i, a := range f.AdhocPrefixes {
@@ -470,7 +500,7 @@ func validSource(s *Source, seen map[string]bool) error {
 	seen[s.Name] = true
 	switch s.Type {
 	case "file":
-		if s.Path == "" || s.URL != "" || s.TokenRef != "" || s.OptInTag != "" || s.AddressOrder != nil || s.Filters != nil {
+		if s.Path == "" || s.URL != "" || s.TokenRef != "" || s.OptInTag != "" || s.AddressOrder != nil || s.Filters != nil || s.ManagementPrefixes != nil {
 			return fmt.Errorf("source %s: a file source takes path and nothing else", s.Name)
 		}
 	case "netbox":
@@ -484,6 +514,8 @@ func validSource(s *Source, seen map[string]bool) error {
 			return fmt.Errorf("source %s: token_ref %q is not a valid ref name", s.Name, s.TokenRef)
 		case s.OptInTag == "":
 			return fmt.Errorf("source %s: opt_in_tag is required; only devices carrying it are opted in", s.Name)
+		case s.ManagementPrefixes != nil && (s.ManagementPrefixes.Tag == "") == (s.ManagementPrefixes.Role == ""):
+			return fmt.Errorf("source %s: management_prefixes takes exactly one of tag or role", s.Name)
 		}
 		if s.AddressOrder == nil {
 			s.AddressOrder = AddressFields

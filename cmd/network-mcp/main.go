@@ -96,6 +96,18 @@ func setup(args []string, getenv func(string) string) (*tools.Deps, error) {
 		fmt.Println(version.Version)
 		return nil, nil
 	}
+	log := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: cfg.LogLevel}))
+	// before Load, which copies the prefixes; counts only, never the prefixes
+	fallback, err := inventory.ManagementPrefixes(context.Background(), cfg)
+	if err != nil {
+		return nil, err
+	}
+	if s := cfg.File.PrefixSource(); s != nil && fallback != nil {
+		log.Warn("management prefixes from the config file: NetBox unreachable", "source", s.Name,
+			"count", len(cfg.File.ManagementPrefixes), "reason", fallback.Error())
+	} else if s != nil {
+		log.Info("management prefixes from NetBox", "source", s.Name, "count", len(cfg.File.ManagementPrefixes))
+	}
 	inv, err := inventory.Load(cfg)
 	if err != nil {
 		return nil, err
@@ -112,7 +124,7 @@ func setup(args []string, getenv func(string) string) (*tools.Deps, error) {
 		Config: cfg,
 		Inv:    inv,
 		Audit:  audit.New(os.Stderr),
-		Log:    slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: cfg.LogLevel})),
+		Log:    log,
 		Lookup: func(ctx context.Context, host string) ([]netip.Addr, error) {
 			return net.DefaultResolver.LookupNetIP(ctx, "ip", host)
 		},

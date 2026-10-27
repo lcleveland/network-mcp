@@ -101,6 +101,28 @@ func New(f config.File, adhoc bool, srcs ...Source) *Inventory {
 	return inv
 }
 
+// ManagementPrefixes replaces c.File.ManagementPrefixes with the IPAM
+// prefixes of the source that sets management_prefixes, read once at
+// startup so a NetBox edit never widens a running server. Only an
+// unreachable NetBox falls back to the file's list, when it has one, and
+// that reason is returned for the caller to log; any other failure
+// refuses startup. With no such source it does nothing.
+func ManagementPrefixes(ctx context.Context, c *config.Config) (fallback, err error) {
+	s := c.File.PrefixSource()
+	if s == nil {
+		return nil, nil
+	}
+	ps, err := newNetBox(*s, c.CredentialsDir).prefixes(ctx)
+	switch {
+	case errors.Is(err, errUnreachable) && len(c.File.ManagementPrefixes) > 0:
+		return err, nil
+	case err != nil:
+		return nil, fmt.Errorf("source %s: management_prefixes: %w", s.Name, err)
+	}
+	c.File.ManagementPrefixes = ps
+	return nil, config.CheckPrefixes(c.File)
+}
+
 // Load builds the configured sources. A broken static file refuses startup;
 // NetBox is first read on use.
 func Load(c *config.Config) (*Inventory, error) {

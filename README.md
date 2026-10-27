@@ -92,7 +92,7 @@ Results are JSON built by the server. Device text appears only in the fields lis
 The config file holds structure only, never secrets:
 
 ```yaml
-management_prefixes: [192.0.2.0/24]   # empty or missing refuses startup
+management_prefixes: [192.0.2.0/24]   # empty or missing refuses startup, unless NetBox supplies them
 adhoc_prefixes: [192.0.2.128/25]      # optional, inside management_prefixes; used only with --allow-adhoc
 # prefixes_ref: net-prefixes           # instead of both lists above (never with them); see Credential refs
 resolve_names: false                   # true: DNS-resolve a device no source gives an address
@@ -105,6 +105,7 @@ sources:                               # merged in this order; see Inventory
     opt_in_tag: network-mcp            # only devices with this tag are opted in
     address_order: [primary_ip4, primary_ip6, oob_ip]  # the default
     filters: {site: dc1}               # optional extra /api/dcim/devices/ filters
+    management_prefixes: {tag: network-mcp-mgmt}  # optional, or {role: management}; see Management prefixes from NetBox
 rules:                                 # credentials and SNMP; never from a source
   - {match: default,          read_ref: ssh-read}
   - {match: {platform: nxos}, read_ref: nxos-read, write_ref: nxos-write}
@@ -138,6 +139,8 @@ The device file is a list. Names are unique and case-insensitive, and every devi
 ```
 
 **Inventory.** Sources merge by device name, field by field: the first source in `sources` that sets a field wins, and `provenance` records which one. A device in one source only is kept. Each source's list is cached for 60 s; a failed source contributes nothing (no stale data) and `network_status` shows its error. NetBox is queried with `?tag=<opt_in_tag>`, and the tag is checked again on every object because NetBox ignores filters it does not know. A device with no address (and `resolve_names` off) or with neither a `read_ref` nor an `snmp` rule is refused with the reason. A device with only an `snmp` rule is SNMP-only: `network_snmp` reads it, the SSH tools refuse it and `network_status` skips the SSH checks. A platform the table does not know gets `generic_ssh`.
+
+**Management prefixes from NetBox.** One `netbox` source may set `management_prefixes: {tag: …}` or `{role: …}` (exactly one). At startup the server reads every IPAM prefix carrying that tag or role slug (checked again on each object, as for devices) and uses them instead of the file's `management_prefixes` or `prefixes_ref` list; it never re-reads them, so a NetBox edit takes effect only after a restart. The file list, when set, is then only a fallback: if NetBox cannot be reached (connection error, timeout, 5xx) the server starts on the file list and logs a warning, and without a file list it refuses to start. A NetBox that answers wrongly never falls back: a rejected token, no matching prefix or a malformed prefix refuses startup. `adhoc_prefixes` stay in the file or `prefixes_ref` and must sit inside whichever list is used. The startup log gives only the source and a count. In this mode **NetBox write access decides where the server may connect**: anyone who can tag a prefix or set a device's address can widen it, and the pinned host key is then the only independent check.
 
 **Rules.** `read_ref`, `write_ref` and `snmp` resolve separately, default < platform (the platform value or its driver) < tag < device; among rules of one level the first listed wins. `write_ref` never falls back to `read_ref`.
 

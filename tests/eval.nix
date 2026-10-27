@@ -207,6 +207,28 @@ in
         refute "management_prefixes" "$conf"
         refute "192.0.2" "$conf"
       '';
+  # NetBox supplies the prefixes: no file list needed
+  module-netbox-prefixes =
+    unitCheck "module-netbox-prefixes"
+      {
+        settings = {
+          sources = [
+            {
+              name = "nb";
+              type = "netbox";
+              url = "https://netbox.example.com";
+              token_ref = "nb-token";
+              opt_in_tag = "mcp";
+              management_prefixes.tag = "mgmt";
+            }
+          ];
+        };
+      }
+      ''
+        conf=$(grep -o -- '--config [^ ]*' cmd | cut -d' ' -f2)
+        check "tag: mgmt" "$conf"
+        refute "192.0.2" "$conf"
+      '';
   module-prefixes-ref-missing = mustFail "prefixes-ref-missing" {
     settings.prefixes_ref = "net-prefixes";
   } "prefixes_ref needs an entry in credentials";

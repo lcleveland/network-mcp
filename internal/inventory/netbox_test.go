@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"net/netip"
 	"os"
 	"path/filepath"
 	"strings"
@@ -96,5 +97,78 @@ func TestNetBoxErrors(t *testing.T) {
 	src := config.Source{Name: "nb", URL: srv.URL, TokenRef: "missing", OptInTag: "mcp"}
 	if _, err := newNetBox(src, dir).List(ctx); err == nil {
 		t.Error("a missing token ref was accepted")
+	}
+}
+
+func TestManagementPrefixes(t *testing.T) {
+	var queries []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet || !strings.HasSuffix(r.URL.Path, "/api/ipam/prefixes/") {
+			t.Errorf("%s %s", r.Method, r.URL.Path)
+		}
+		queries = append(queries, r.URL.RawQuery)
+		switch strings.TrimSuffix(r.URL.Path, "/api/ipam/prefixes/") {
+		case "/ok":
+			// the last two do not match the selector: a NetBox that ignored the filter
+			fmt.Fprint(w, `{"next": null, "results": [
+				{"prefix": "192.0.2.0/24", "role": {"slug": "management"}, "tags": [{"slug": "mgmt"}]},
+				{"prefix": "2001:db8::/64", "role": {"slug": "management"}, "tags": [{"slug": "mgmt"}, {"slug": "x"}]},
+				{"prefix": "198.51.100.0/24", "role": {"slug": "data"}, "tags": [{"slug": "mgmt"}]},
+				{"prefix": "203.0.113.0/24", "role": null, "tags": []}]}`)
+		case "/down":
+			http.Error(w, "maintenance", http.StatusServiceUnavailable)
+		case "/denied":
+			http.Error(w, "no", http.StatusForbidden)
+		case "/empty":
+			fmt.Fprint(w, `{"next": null, "results": []}`)
+		case "/bad":
+			fmt.Fprint(w, `{"next": null, "results": [{"prefix": "nope", "tags": [{"slug": "mgmt"}]}]}`)
+		}
+	}))
+	defer srv.Close()
+	closed := httptest.NewServer(http.NotFoundHandler())
+	closed.Close()
+	dir := t.TempDir()
+	os.WriteFile(filepath.Join(dir, "nb-token"), []byte(`{"token":"0123456789abcdef"}`), 0o600)
+	file := []netip.Prefix{netip.MustParsePrefix("10.0.0.0/8")}
+	cfg := func(url string, sel config.PrefixSelector, mgmt, adhoc []netip.Prefix) *config.Config {
+		src := config.Source{Name: "nb", Type: "netbox", URL: url, TokenRef: "nb-token", OptInTag: "mcp", ManagementPrefixes: &sel}
+		return &config.Config{CredentialsDir: dir, File: config.File{ManagementPrefixes: mgmt, AdhocPrefixes: adhoc, Sources: []config.Source{src}}}
+	}
+
+	// NetBox wins over the file list, by tag or by role
+	for sel, want := range map[config.PrefixSelector]string{{Tag: "mgmt"}: "[192.0.2.0/24 2001:db8::/64 198.51.100.0/24]", {Role: "management"}: "[192.0.2.0/24 2001:db8::/64]"} {
+		c := cfg(srv.URL+"/ok", sel, file, nil)
+		if fb, err := ManagementPrefixes(ctx, c); fb != nil || err != nil || fmt.Sprint(c.File.ManagementPrefixes) != want {
+			t.Errorf("%+v: %v %v %v", sel, c.File.ManagementPrefixes, fb, err)
+		}
+	}
+	if q := queries[0] + queries[1]; !strings.Contains(q, "tag=mgmt") || !strings.Contains(q, "role=management") {
+		t.Errorf("queries: %q", queries)
+	}
+	c := cfg(srv.URL+"/ok", config.PrefixSelector{Role: "management"}, nil, []netip.Prefix{netip.MustParsePrefix("198.51.100.0/25")})
+	if _, err := ManagementPrefixes(ctx, c); err == nil || !strings.Contains(err.Error(), "adhoc_prefixes[0]") {
+		t.Errorf("adhoc outside the NetBox prefixes: %v", err)
+	}
+
+	// an outage falls back to the file list, and refuses startup without one
+	for _, url := range []string{srv.URL + "/down", closed.URL} {
+		c := cfg(url, config.PrefixSelector{Tag: "mgmt"}, file, nil)
+		if fb, err := ManagementPrefixes(ctx, c); fb == nil || err != nil || fmt.Sprint(c.File.ManagementPrefixes) != "[10.0.0.0/8]" {
+			t.Errorf("%s: %v %v", url, fb, err)
+		}
+		if _, err := ManagementPrefixes(ctx, cfg(url, config.PrefixSelector{Tag: "mgmt"}, nil, nil)); err == nil {
+			t.Errorf("%s without a file list started", url)
+		}
+	}
+	// misconfiguration never falls back, and names no prefix
+	for path, want := range map[string]string{"/denied": "403", "/empty": "no IPAM prefix", "/bad": "result 0 is malformed"} {
+		fb, err := ManagementPrefixes(ctx, cfg(srv.URL+path, config.PrefixSelector{Tag: "mgmt"}, file, nil))
+		if fb != nil || err == nil || !strings.Contains(err.Error(), want) || strings.Contains(err.Error(), "nope") {
+			t.Errorf("%s: %v %v", path, fb, err)
+		}
+	}
+	if fb, err := ManagementPrefixes(ctx, &config.Config{File: config.File{ManagementPrefixes: file}}); fb != nil || err != nil {
+		t.Errorf("no prefix source: %v %v", fb, err)
 	}
 }
