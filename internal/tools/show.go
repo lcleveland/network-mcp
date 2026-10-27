@@ -126,11 +126,15 @@ func registerShow(s *mcp.Server, d Deps) {
 	})
 }
 
-// decodeJSON keeps numbers exact; anything but one JSON value is not JSON.
+// decodeJSON keeps numbers exact; anything but one JSON object is not JSON.
+// Lines before the object are skipped: NX-OS can print shell noise
+// ("sh: /mnt/pss/patch_debug.log: Read-only file system") ahead of it.
 func decodeJSON(s string, try bool) (any, bool) {
-	if !try {
+	i := strings.IndexByte(s, '{')
+	if !try || i < 0 || (i > 0 && s[i-1] != '\n') {
 		return nil, false
 	}
+	s = s[i:]
 	dec := json.NewDecoder(strings.NewReader(s))
 	dec.UseNumber()
 	var v any
