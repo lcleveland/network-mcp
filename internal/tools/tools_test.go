@@ -49,6 +49,7 @@ type setup struct {
 	groups    []string
 	platform  string
 	platforms map[string]platform.Config
+	adhoc     bool
 }
 
 func startWith(t *testing.T, su setup) *env {
@@ -69,11 +70,17 @@ func startWith(t *testing.T, su setup) *env {
 		File: config.File{
 			ManagementPrefixes: []netip.Prefix{netip.MustParsePrefix("127.0.0.0/8")},
 			Sources:            []config.Source{{Name: "file", Type: "file", Path: devs}},
-			Credentials:        config.Credentials{Default: config.CredRule{ReadRef: "ssh-read"}},
-			Platforms:          su.platforms,
+			AdhocPrefixes:      []netip.Prefix{netip.MustParsePrefix("127.0.0.0/8")},
+			Rules: []config.Rule{
+				{Match: config.Match{Kind: "default"}, ReadRef: "ssh-read"},
+				{Match: config.Match{Kind: "adhoc"}, ReadRef: "adhoc-read"},
+			},
+			Platforms: su.platforms,
 		},
+		AllowAdhoc: su.adhoc,
 	}
-	inv, err := inventory.Load(cfg.File.Sources)
+	os.WriteFile(filepath.Join(dir, "adhoc-read"), []byte(`{"username":"adhoc","password":"`+secret+`"}`), 0o400)
+	inv, err := inventory.Load(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -201,6 +208,27 @@ func TestShowDeviceErrors(t *testing.T) {
 	}
 	if got := e.commands(); len(got) != 0 {
 		t.Fatalf("command sent over an unverified connection: %q", got)
+	}
+}
+
+func TestAdhoc(t *testing.T) {
+	t.Cleanup(func() { inventory.AdhocPort = 22 })
+	args := map[string]any{"device": "127.0.0.1", "command": "show version"}
+
+	e := start(t, map[string]string{"show version": "v"}, sshfake.Options{})
+	if _, errText := e.call(t, "network_show", args); !strings.Contains(errText, "--allow-adhoc") {
+		t.Fatalf("without the flag: %s", errText)
+	}
+
+	// only the adhoc rule's login works: ssh-read's user is refused
+	e = startWith(t, setup{eng: &sshfake.Engine{Hostname: "dev1", Commands: map[string]string{"show version": "v"}}, opt: sshfake.Options{FailUser: "mcp"}, adhoc: true})
+	inventory.AdhocPort = e.fake.Port
+	if out, errText := e.call(t, "network_show", args); out["output"] != "v" {
+		t.Fatalf("ad-hoc: %v %s", out, errText)
+	}
+	os.WriteFile(e.fake.KnownHosts, []byte{}, 0o600)
+	if out, _ := e.call(t, "network_show", args); !strings.Contains(fmt.Sprint(out["device_error"]), "key") {
+		t.Fatalf("unpinned host key: %v", out)
 	}
 }
 

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
@@ -33,7 +34,10 @@ func TestSetup(t *testing.T) {
 		}
 	}
 	d, err := setup([]string{"--config", withDevs, "--credentials-dir", dir, "--known-hosts", "/dev/null"}, noenv)
-	if err != nil || d.Inv.Len() != 1 {
-		t.Fatalf("%v %v", d, err)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := d.Inv.Get(context.Background(), "dev1"); err != nil {
+		t.Fatal(err)
 	}
 }

@@ -115,7 +115,7 @@ pkgs.testers.runNixOSTest {
               )}";
             }
           ];
-          credentials.default.read_ref = "ssh-read";
+          rules = [ { match = "default"; read_ref = "ssh-read"; } ];
         };
       };
     };

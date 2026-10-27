@@ -13,8 +13,8 @@ const good = `
 management_prefixes: [192.0.2.0/24, 2001:db8::/32]
 sources:
   - {name: file, type: file, path: /etc/network-mcp/devices.yaml}
-credentials:
-  default: {read_ref: ssh-read}
+rules:
+  - {match: default, read_ref: ssh-read}
 `
 
 func TestParse(t *testing.T) {
@@ -27,7 +27,7 @@ func TestParse(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(c.File.ManagementPrefixes) != 2 || c.File.Credentials.Default.ReadRef != "ssh-read" || c.CredentialsDir != dir {
+	if len(c.File.ManagementPrefixes) != 2 || c.File.Rules[0].ReadRef != "ssh-read" || c.CredentialsDir != dir {
 		t.Fatalf("%+v", c)
 	}
 	if !c.Enabled("cli") || !c.Enabled("core") {
@@ -46,6 +46,7 @@ func TestParse(t *testing.T) {
 		{nil, "--config"},
 		{[]string{"--config", path}, "--credentials-dir"},
 		{[]string{"--config", path, "--credentials-dir", dir, "--tool-groups", "x"}, "unknown group"},
+		{[]string{"--config", path, "--credentials-dir", dir, "--allow-adhoc"}, "adhoc_prefixes"},
 	} {
 		if _, err := Parse(tc.args, func(string) string { return "" }); err == nil || !strings.Contains(err.Error(), tc.want) {
 			t.Errorf("%v: %v, want %q", tc.args, err, tc.want)
@@ -96,19 +97,55 @@ func TestParseFile(t *testing.T) {
 		``:                            "management_prefixes is empty",
 		`management_prefixes: []`:     "management_prefixes is empty",
 		`management_prefixes: [nope]`: "nope",
-		"management_prefixes: [192.0.2.0/24]\npassword: x":                                             "password",
-		"management_prefixes: [192.0.2.0/24]\nsources: [{name: a, type: netbox}]":                      "unknown type",
-		"management_prefixes: [192.0.2.0/24]\nsources: [{name: a, type: file}]":                        "path",
-		"management_prefixes: [192.0.2.0/24]\ncredentials: {default: {read_ref: ../x}}":                "valid ref",
-		"management_prefixes: [192.0.2.0/24]\nplatforms: {c9k: {driver: iosxr}}":                       "driver",
-		"management_prefixes: [192.0.2.0/24]\nplatforms: {c9k: {profile: junos}}":                      "profile",
-		"management_prefixes: [192.0.2.0/24]\nplatforms: {c9k: {drvier: iosxe}}":                       "drvier",
-		"management_prefixes: [192.0.2.0/24]\nplatforms: {C9K: {}, c9k: {}}":                           "repeats",
-		"management_prefixes: [192.0.2.0/24]\nplatforms: {c9k: {getters: {x: 'show version | json'}}}": "character",
-		"management_prefixes: [192.0.2.0/24]\nplatforms: {c9k: {read_allow: ['a b']}}":                 "one keyword",
+		"management_prefixes: [192.0.2.0/24]\npassword: x":                                                                                                    "password",
+		"management_prefixes: [192.0.2.0/24]\nsources: [{name: a, type: nautobot}]":                                                                           "unknown type",
+		"management_prefixes: [192.0.2.0/24]\nsources: [{name: a, type: file}]":                                                                               "path",
+		"management_prefixes: [192.0.2.0/24]\nrules: [{match: default, read_ref: ../x}]":                                                                      "valid ref",
+		"management_prefixes: [192.0.2.0/24]\nrules: [{match: {platform: a, tag: b}}]":                                                                        "match must be",
+		"management_prefixes: [192.0.2.0/24]\nrules: [{match: everything}]":                                                                                   "match must be",
+		"management_prefixes: [192.0.2.0/24]\nrules: [{read_ref: a}]":                                                                                         "match is required",
+		"management_prefixes: [192.0.2.0/24]\nrules: [{match: default, snmp: {version: v1, ref: a}}]":                                                         "snmp.version",
+		"management_prefixes: [192.0.2.0/24]\nadhoc_prefixes: [192.0.0.0/16]":                                                                                 "not inside",
+		"management_prefixes: [192.0.2.0/24]\nadhoc_prefixes: [198.51.100.0/24]":                                                                              "not inside",
+		"management_prefixes: [192.0.2.0/24]\nsources: [{name: a, type: file, path: x, url: y}]":                                                              "path and nothing else",
+		"management_prefixes: [192.0.2.0/24]\nsources: [{name: a, type: netbox, url: 'ftp://x'}]":                                                             "url must be",
+		"management_prefixes: [192.0.2.0/24]\nsources: [{name: a, type: netbox, url: 'https://u:p@x'}]":                                                       "url must be",
+		"management_prefixes: [192.0.2.0/24]\nsources: [{name: a, type: netbox, url: 'https://x'}]":                                                           "token_ref",
+		"management_prefixes: [192.0.2.0/24]\nsources: [{name: a, type: netbox, url: 'https://x', token_ref: t}]":                                             "opt_in_tag",
+		"management_prefixes: [192.0.2.0/24]\nsources: [{name: a, type: netbox, url: 'https://x', token_ref: t, opt_in_tag: m, address_order: [primary_ip]}]": "address_order",
+		"management_prefixes: [192.0.2.0/24]\nplatforms: {c9k: {driver: iosxr}}":                                                                              "driver",
+		"management_prefixes: [192.0.2.0/24]\nplatforms: {c9k: {profile: junos}}":                                                                             "profile",
+		"management_prefixes: [192.0.2.0/24]\nplatforms: {c9k: {drvier: iosxe}}":                                                                              "drvier",
+		"management_prefixes: [192.0.2.0/24]\nplatforms: {C9K: {}, c9k: {}}":                                                                                  "repeats",
+		"management_prefixes: [192.0.2.0/24]\nplatforms: {c9k: {getters: {x: 'show version | json'}}}":                                                        "character",
+		"management_prefixes: [192.0.2.0/24]\nplatforms: {c9k: {read_allow: ['a b']}}":                                                                        "one keyword",
 	} {
 		if _, err := ParseFile([]byte(in)); err == nil || !strings.Contains(err.Error(), want) {
 			t.Errorf("%q: %v, want %q", in, err, want)
 		}
+	}
+}
+
+func TestParseFileFull(t *testing.T) {
+	f, err := ParseFile([]byte(`
+management_prefixes: [192.0.2.0/24]
+adhoc_prefixes: [192.0.2.128/25]
+sources:
+  - {name: nb, type: netbox, url: 'https://netbox.example.com', token_ref: nb-token, opt_in_tag: mcp, filters: {site: dc1}}
+rules:
+  - {match: default, read_ref: ssh-read}
+  - {match: {platform: nxos}, read_ref: nxos-read, write_ref: nxos-write}
+  - {match: {tag: core}, snmp: {version: v3, ref: snmp-core}}
+  - {match: {device: dev1}, read_ref: dev1-read}
+  - {match: adhoc, read_ref: adhoc-read}
+`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := f.Sources[0].AddressOrder; strings.Join(got, ",") != "primary_ip4,primary_ip6,oob_ip" {
+		t.Errorf("default address_order: %v", got)
+	}
+	if m := f.Rules[1].Match; m.Kind != "platform" || m.Value != "nxos" || f.Rules[4].Match.Kind != "adhoc" || f.Rules[2].SNMP.Ref != "snmp-core" {
+		t.Errorf("%+v", f.Rules)
 	}
 }

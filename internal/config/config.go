@@ -14,6 +14,7 @@ import (
 	"log/slog"
 	"net"
 	"net/netip"
+	"net/url"
 	"os"
 	"path/filepath"
 	"slices"
@@ -42,6 +43,7 @@ type Config struct {
 	Addr          string
 	Path          string
 	HTTPAuthToken string // never logged
+	AllowAdhoc    bool
 
 	File File
 }
@@ -49,24 +51,57 @@ type Config struct {
 // File is the YAML config file.
 type File struct {
 	ManagementPrefixes []netip.Prefix `yaml:"management_prefixes"`
+	AdhocPrefixes      []netip.Prefix `yaml:"adhoc_prefixes"` // a subset of management_prefixes
+	ResolveNames       bool           `yaml:"resolve_names"`  // DNS-resolve a device no source gives an address
 	Sources            []Source       `yaml:"sources"`
-	Credentials        Credentials    `yaml:"credentials"`
+	Rules              []Rule         `yaml:"rules"`
 	// keyed by the sources' platform value, case-insensitively
 	Platforms map[string]platform.Config `yaml:"platforms"`
 }
 
+// Source is one inventory source. file takes path; netbox takes the rest.
 type Source struct {
 	Name string `yaml:"name"`
-	Type string `yaml:"type"`
+	Type string `yaml:"type"` // file | netbox
 	Path string `yaml:"path"`
+
+	URL          string            `yaml:"url"`
+	TokenRef     string            `yaml:"token_ref"` // credential ref holding JSON {token}
+	OptInTag     string            `yaml:"opt_in_tag"`
+	AddressOrder []string          `yaml:"address_order"`
+	Filters      map[string]string `yaml:"filters"` // extra /api/dcim/devices/ query filters
 }
 
-type Credentials struct {
-	Default CredRule `yaml:"default"`
+// AddressFields are the NetBox device fields address_order may name.
+var AddressFields = []string{"primary_ip4", "primary_ip6", "oob_ip"}
+
+// Rule sets credential refs and SNMP for the devices it matches.
+type Rule struct {
+	Match    Match  `yaml:"match"`
+	ReadRef  string `yaml:"read_ref"`
+	WriteRef string `yaml:"write_ref"`
+	SNMP     *SNMP  `yaml:"snmp"`
 }
 
-type CredRule struct {
-	ReadRef string `yaml:"read_ref"`
+type SNMP struct {
+	Version string `yaml:"version" json:"version"` // v2c | v3
+	Ref     string `yaml:"ref" json:"ref"`
+}
+
+// Match is `default`, `adhoc`, or one of {platform|tag|device: value}.
+type Match struct{ Kind, Value string }
+
+func (m *Match) UnmarshalYAML(n *yaml.Node) error {
+	switch {
+	case n.Kind == yaml.ScalarNode && (n.Value == "default" || n.Value == "adhoc"):
+		m.Kind = n.Value
+	case n.Kind == yaml.MappingNode && len(n.Content) == 2 && slices.Contains([]string{"platform", "tag", "device"}, n.Content[0].Value) &&
+		n.Content[1].Kind == yaml.ScalarNode && n.Content[1].Value != "":
+		m.Kind, m.Value = n.Content[0].Value, n.Content[1].Value
+	default:
+		return fmt.Errorf("line %d: match must be default, adhoc or one of {platform|tag|device: value}", n.Line)
+	}
+	return nil
 }
 
 func (c *Config) LogValue() slog.Value {
@@ -79,6 +114,7 @@ func (c *Config) LogValue() slog.Value {
 		slog.Bool("http", c.HTTP),
 		slog.String("addr", c.Addr),
 		slog.Bool("http_auth_set", c.HTTPAuthToken != ""),
+		slog.Bool("allow_adhoc", c.AllowAdhoc),
 	)
 }
 
@@ -103,6 +139,7 @@ func Parse(args []string, getenv func(string) string) (*Config, error) {
 	fs.StringVar(&c.Addr, "addr", "127.0.0.1:8232", "HTTP listen address")
 	fs.StringVar(&c.Path, "path", "/mcp", "HTTP MCP endpoint path")
 	fs.StringVar(&hauth, "http-auth-token-file", getenv("NETWORK_MCP_HTTP_AUTH_TOKEN_FILE"), "file holding the bearer token HTTP clients must send (env NETWORK_MCP_HTTP_AUTH_TOKEN_FILE)")
+	fs.BoolVar(&c.AllowAdhoc, "allow-adhoc", false, "accept an IP literal inside adhoc_prefixes as a device (generic driver, adhoc rule)")
 	fs.BoolVar(&c.ShowVersion, "version", false, "print version and exit")
 	if err := fs.Parse(args); err != nil {
 		return nil, err
@@ -145,6 +182,9 @@ func Parse(args []string, getenv func(string) string) (*Config, error) {
 	}
 	if c.File, err = ParseFile(b); err != nil {
 		return nil, fmt.Errorf("%s: %w", c.ConfigPath, err)
+	}
+	if c.AllowAdhoc && len(c.File.AdhocPrefixes) == 0 {
+		return nil, errors.New("--allow-adhoc needs adhoc_prefixes in the config file")
 	}
 	return &c, nil
 }
@@ -203,22 +243,66 @@ func ParseFile(b []byte) (File, error) {
 	if len(f.ManagementPrefixes) == 0 {
 		return f, errors.New("management_prefixes is empty: the server connects only to devices inside them")
 	}
-	seen := map[string]bool{}
-	for _, s := range f.Sources {
-		switch {
-		case s.Name == "" || seen[s.Name]:
-			return f, fmt.Errorf("source names must be set and unique, got %q", s.Name)
-		case s.Type != "file":
-			return f, fmt.Errorf("source %s: unknown type %q (want file)", s.Name, s.Type)
-		case s.Path == "":
-			return f, fmt.Errorf("source %s: path is required", s.Name)
+	for _, a := range f.AdhocPrefixes {
+		if !slices.ContainsFunc(f.ManagementPrefixes, func(m netip.Prefix) bool { return m.Bits() <= a.Bits() && m.Contains(a.Addr()) }) {
+			return f, fmt.Errorf("adhoc_prefixes: %s is not inside management_prefixes", a)
 		}
-		seen[s.Name] = true
 	}
-	if r := f.Credentials.Default.ReadRef; r != "" && !creds.ValidRef(r) {
-		return f, fmt.Errorf("credentials.default.read_ref %q is not a valid ref name", r)
+	seen := map[string]bool{}
+	for i := range f.Sources {
+		if err := validSource(&f.Sources[i], seen); err != nil {
+			return f, err
+		}
+	}
+	for i, r := range f.Rules {
+		switch {
+		case r.Match.Kind == "":
+			return f, fmt.Errorf("rules[%d]: match is required", i)
+		case r.ReadRef != "" && !creds.ValidRef(r.ReadRef), r.WriteRef != "" && !creds.ValidRef(r.WriteRef),
+			r.SNMP != nil && !creds.ValidRef(r.SNMP.Ref):
+			return f, fmt.Errorf("rules[%d]: a ref is not a valid ref name", i)
+		case r.SNMP != nil && r.SNMP.Version != "v2c" && r.SNMP.Version != "v3":
+			return f, fmt.Errorf("rules[%d]: snmp.version %q (want v2c or v3)", i, r.SNMP.Version)
+		}
 	}
 	return f, platform.Validate(f.Platforms)
+}
+
+// validSource checks s and fills the NetBox defaults.
+func validSource(s *Source, seen map[string]bool) error {
+	if s.Name == "" || seen[s.Name] {
+		return fmt.Errorf("source names must be set and unique, got %q", s.Name)
+	}
+	seen[s.Name] = true
+	switch s.Type {
+	case "file":
+		if s.Path == "" || s.URL != "" || s.TokenRef != "" || s.OptInTag != "" || s.AddressOrder != nil || s.Filters != nil {
+			return fmt.Errorf("source %s: a file source takes path and nothing else", s.Name)
+		}
+	case "netbox":
+		u, err := url.Parse(s.URL)
+		switch {
+		case s.Path != "":
+			return fmt.Errorf("source %s: a netbox source takes no path", s.Name)
+		case err != nil || (u.Scheme != "https" && u.Scheme != "http") || u.Host == "" || u.User != nil || u.RawQuery != "":
+			return fmt.Errorf("source %s: url must be http(s)://host[/path], without credentials or query", s.Name)
+		case !creds.ValidRef(s.TokenRef):
+			return fmt.Errorf("source %s: token_ref %q is not a valid ref name", s.Name, s.TokenRef)
+		case s.OptInTag == "":
+			return fmt.Errorf("source %s: opt_in_tag is required; only devices carrying it are opted in", s.Name)
+		}
+		if s.AddressOrder == nil {
+			s.AddressOrder = AddressFields
+		}
+		for _, a := range s.AddressOrder {
+			if !slices.Contains(AddressFields, a) {
+				return fmt.Errorf("source %s: address_order entry %q (want %s)", s.Name, a, strings.Join(AddressFields, ", "))
+			}
+		}
+	default:
+		return fmt.Errorf("source %s: unknown type %q (want file or netbox)", s.Name, s.Type)
+	}
+	return nil
 }
 
 // Enabled reports whether a tool group is on.

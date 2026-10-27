@@ -61,10 +61,11 @@ func registerShow(s *mcp.Server, d Deps) {
 		InputSchema: in,
 		Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true, OpenWorldHint: new(true)},
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, in ShowInput) (*mcp.CallToolResult, ShowOutput, error) {
-		dev, ok := d.Inv.Get(in.Device)
-		if !ok {
-			return nil, ShowOutput{}, fmt.Errorf("unknown device %q; network_status lists the inventory sources", in.Device)
+		dev, err := d.Inv.Get(ctx, in.Device)
+		if err != nil {
+			return nil, ShowOutput{}, err
 		}
+		var ok bool
 		p := platform.Resolve(dev.Platform, d.Config.File.Platforms)
 		raw := in.Command
 		switch {

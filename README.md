@@ -47,6 +47,7 @@ Results are JSON built by the server. Device text appears only in the fields lis
 | `--credentials-dir` | `CREDENTIALS_DIRECTORY` | required |
 | `--known-hosts` | `NETWORK_MCP_KNOWN_HOSTS` | required if any device uses SSH |
 | `--tool-groups` | | all (`cli`; `core` is always on) |
+| `--allow-adhoc` | | off; needs `adhoc_prefixes` |
 | `--request-timeout`, `--log-level` | `NETWORK_MCP_LOG_LEVEL` | `30s`, `info` |
 | `--stdio` / `--http` | | stdio |
 | `--addr`, `--path` | | `127.0.0.1:8232`, `/mcp` |
@@ -58,10 +59,23 @@ The config file holds structure only, never secrets:
 
 ```yaml
 management_prefixes: [192.0.2.0/24]   # empty or missing refuses startup
-sources:
+adhoc_prefixes: [192.0.2.128/25]      # optional, inside management_prefixes; used only with --allow-adhoc
+resolve_names: false                   # true: DNS-resolve a device no source gives an address
+sources:                               # merged in this order; see Inventory
   - {name: file, type: file, path: /etc/network-mcp/devices.yaml}
-credentials:
-  default: {read_ref: ssh-read}
+  - name: netbox
+    type: netbox                       # read-only
+    url: https://netbox.example.com
+    token_ref: netbox-token            # credential ref holding {"token": …}
+    opt_in_tag: network-mcp            # only devices with this tag are opted in
+    address_order: [primary_ip4, primary_ip6, oob_ip]  # the default
+    filters: {site: dc1}               # optional extra /api/dcim/devices/ filters
+rules:                                 # credentials and SNMP; never from a source
+  - {match: default,          read_ref: ssh-read}
+  - {match: {platform: nxos}, read_ref: nxos-read, write_ref: nxos-write}
+  - {match: {tag: core},      snmp: {version: v3, ref: snmp-core}}
+  - {match: {device: dev1},   read_ref: dev1-read}
+  - {match: adhoc,            read_ref: adhoc-read}
 platforms:                             # optional; keys match the platform value, ignoring case
   c9k: {driver: iosxe, profile: iosxe} # nothing is inferred: set both
   aos:
@@ -73,12 +87,18 @@ platforms:                             # optional; keys match the platform value
 
 Getter commands pass the same read gate. Allow and deny entries only add: none removes a compiled-in deny or widens the character set, and an unknown driver or profile, or a getter command the gate refuses, stops startup.
 
-The device file is a list. Names are unique and case-insensitive, and every device listed is opted in:
+The device file is a list. Names are unique and case-insensitive, and every device listed is opted in. Only `name` is required, so the file can patch a field NetBox lacks:
 
 ```yaml
 - {name: dev1, address: 192.0.2.10}
 - {name: dev2, address: dev2.example.net, port: 2222, platform: cisco_ios, tags: [core]}
 ```
+
+**Inventory.** Sources merge by device name, field by field: the first source in `sources` that sets a field wins, and `provenance` records which one. A device in one source only is kept. Each source's list is cached for 60 s; a failed source contributes nothing (no stale data) and `network_status` shows its error. NetBox is queried with `?tag=<opt_in_tag>`, and the tag is checked again on every object because NetBox ignores filters it does not know. A device with no address (and `resolve_names` off) or no `read_ref` is refused with the reason. A platform the table does not know gets `generic_ssh`.
+
+**Rules.** `read_ref`, `write_ref` and `snmp` resolve separately, default < platform (the platform value or its driver) < tag < device; among rules of one level the first listed wins. `write_ref` never falls back to `read_ref`.
+
+**Ad-hoc addresses.** With `--allow-adhoc`, a `device` that is an IP literal no source knows is accepted if it is inside `adhoc_prefixes`: `generic_ssh`, credentials from the `adhoc` rule only, host key still pinned. Without the flag it is refused.
 
 **Credential refs.** A ref is the file `$CREDENTIALS_DIRECTORY/<ref>`. It holds JSON, either `{"username": …, "password": …}` or `{"username": …, "private_key": …}`. The server reads it on every connect and never caches or logs it. No secret is ever taken from a flag or an environment variable.
 
@@ -102,7 +122,7 @@ The device file is a list. Names are unique and case-insensitive, and every devi
             settings = {
               management_prefixes = [ "192.0.2.0/24" ];
               sources = [ { name = "file"; type = "file"; path = "/etc/network-mcp/devices.yaml"; } ];
-              credentials.default.read_ref = "ssh-read";
+              rules = [ { match = "default"; read_ref = "ssh-read"; } ];
             };
             # ref name -> runtime path, e.g. from sops-nix or agenix
             credentials.ssh-read = "/run/secrets/network-mcp-ssh-read"; # config.sops.secrets.<name>.path

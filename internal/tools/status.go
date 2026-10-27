@@ -55,14 +55,13 @@ func registerStatus(s *mcp.Server, d Deps) {
 					groups = append(groups, g)
 				}
 			}
-			return nil, StatusOutput{Version: version.Version, Groups: groups, Sources: d.Inv.Health}, nil
+			return nil, StatusOutput{Version: version.Version, Groups: groups, Sources: d.Inv.Health(ctx)}, nil
 		}
-		dev, ok := d.Inv.Get(in.Device)
 		g, err := d.gate(ctx, in.Device)
-		if !ok {
+		if g == nil {
 			return nil, StatusOutput{}, err
 		}
-		out := StatusOutput{Device: dev.Name, Address: dev.Address}
+		out := StatusOutput{Device: g.dev.Name, Address: g.dev.Address}
 		field := func(s string, max int) string {
 			s, n := output.Field(s, max)
 			out.Redactions += n
