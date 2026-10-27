@@ -42,7 +42,7 @@ Sources were read on 2026-10-26 at the commits listed under [Pinned revisions](#
 Consequences for the generic SSH driver, which is read-only:
 
 - It must not send `no clipaging`. It should answer the pager prompt itself (by sending a space or a key and stripping the pager text) or accept paged output as it comes. The exact TP-Link pager string was **not found** in any public source. It needs one capture from our own device.
-- Netmiko warns that TP-Link devices offering **only a DSA host key** do not work with current Paramiko. Check whether Go's `x/crypto/ssh` offers `ssh-dss` as a host-key algorithm by default (not checked here).
+- Netmiko warns that TP-Link devices offering **only a DSA host key** do not work with current Paramiko. **Answered (see Own captures):** Go's `x/crypto/ssh` implements `ssh-dss` and `diffie-hellman-group1-sha1` but lists both as insecure and never offers them by default, so network-mcp cannot reach such a device.
 - The `{1,63}` hostname limit in the prompt regexes is worth keeping for the prompt detector.
 
 ## Output sizes (bytes)
@@ -120,6 +120,6 @@ Findings:
 
 Not reached, and still open from above:
 
-- **TP-Link:** no TP-Link device was opted in to network-mcp for this capture, so the pager prompt, `terminal length 0` and the DSA-only host key question remain unanswered.
+- **TP-Link:** left out. A JetStream switch on older firmware offers only an `ssh-dss` host key and `diffie-hellman-group1-sha1` key exchange; `network-mcp hostkey` fails against it with `ssh: no common algorithm for key exchange`, because `x/crypto/ssh` (v0.58) keeps both in its insecure lists and never offers them by default. network-mcp will not enable them. Newer JetStream firmware with RSA host keys and modern key exchange should work; until such a device is opted in, the pager prompt and `terminal length 0` stay unconfirmed.
 - **Classic IOS:** no such device.
 - **SNMP:** SNMP is not configured on the server, so no system, IF-MIB or ENTITY-MIB walk and no bulkwalk timing.
