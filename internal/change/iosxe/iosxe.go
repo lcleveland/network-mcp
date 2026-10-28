@@ -26,6 +26,7 @@ var (
 	archivePath = regexp.MustCompile(`(?m)^archive[ \t]*\r?\n(?:[ \t].*\r?\n)*?[ \t]+path[ \t]+\S`)
 	lockOwner   = regexp.MustCompile(`(?mi)^\s*owner pid\s*:`)
 	copyDest    = regexp.MustCompile(`\[startup-config\]\?\s*$`)
+	backupFile  = regexp.MustCompile(`Backing up current running config to (\S+)`)
 )
 
 // Ready needs archive path set (the server never configures it; a platform
@@ -86,12 +87,25 @@ func (Driver) Pending(ctx context.Context, c change.Conn) (bool, error) {
 }
 
 func (d Driver) Apply(ctx context.Context, c change.Conn, _ string, lines []string, minutes int) (string, error) {
-	for _, l := range slices.Concat([]string{fmt.Sprintf("configure terminal revert timer %d", minutes)}, lines, []string{"end"}) {
-		if _, err := run(ctx, c, l); err != nil {
+	var backup []string
+	for i, l := range slices.Concat([]string{fmt.Sprintf("configure terminal revert timer %d", minutes)}, lines, []string{"end"}) {
+		out, err := run(ctx, c, l)
+		if err != nil {
 			return "", d.revert(ctx, c, err)
 		}
+		if i == 0 {
+			backup = backupFile.FindStringSubmatch(out)
+		}
 	}
-	return c.Run(ctx, "show archive config differences")
+	// the bare command diffs startup against running, which shows unsaved drift and not this change
+	if backup == nil {
+		return "(diff unavailable: the revert timer did not name its backup file)", nil
+	}
+	diff, err := c.Run(ctx, "show archive config differences "+backup[1]+" system:running-config")
+	if err != nil {
+		return "(diff unavailable: " + err.Error() + ")", nil
+	}
+	return diff, nil
 }
 
 // revert leaves config mode and fires the timer now; if that fails too the

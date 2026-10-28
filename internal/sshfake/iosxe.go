@@ -173,7 +173,10 @@ func (d *Device) handle(sid int, mode *string, cmd string, ask func(string) erro
 			return "%Rollback Confirmed Change is already pending\n", true
 		}
 		d.timer, d.backup, *mode = sid, d.Running, "config"
-		return "Enter configuration commands, one per line.  End with CNTL/Z.\n", true
+		name := fmt.Sprintf("archive-Oct-28-12-00-00.000-%d", len(d.files))
+		d.put(name, d.Running)
+		return "Rollback Confirmed Change: Backing up current running config to flash:" + name + "\n" +
+			"Enter configuration commands, one per line.  End with CNTL/Z.\n", true
 	case cmd == "configure confirm":
 		if out := refuse(); out != "" {
 			return out, true

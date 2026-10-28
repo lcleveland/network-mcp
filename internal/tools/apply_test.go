@@ -67,10 +67,12 @@ func TestChangeApplyConfirmSave(t *testing.T) {
 	// sessions: 1 plan, 2 apply, 3 the read below, 4 confirm
 	e, dev := startChange(t, setup{allowConfig: true, allowSave: true, rules: []config.Rule{writeRule}, opt: sshfake.Options{FailUser: "nobody"}})
 	pre := hash.Sum(dev.Running)
+	dev.Startup = "" // unsaved drift must stay out of the change's diff
 	out := applied(t, e)
 	id := out["change_id"].(string)
 	if len(id) != 32 || out["post_hash"] == pre || out["post_hash"] != hash.Sum(dev.Config()) || out["deadline"] == nil ||
-		!strings.Contains(out["diff"].(string), "+vlan 10") || fmt.Sprint(out["_untrusted"]) != "[diff]" || !dev.Pending() {
+		!strings.Contains(out["diff"].(string), "+vlan 10") || strings.Contains(out["diff"].(string), "+archive") ||
+		fmt.Sprint(out["_untrusted"]) != "[diff]" || !dev.Pending() {
 		t.Fatalf("apply: %v", out)
 	}
 	st, _ := e.call(t, "network_change", map[string]any{"action": "status"})
@@ -87,7 +89,8 @@ func TestChangeApplyConfirmSave(t *testing.T) {
 		t.Fatalf("confirm: %v %s", out, errText)
 	}
 	log := dev.Log()
-	want := []string{"2 configure terminal revert timer 5", "2 vlan 10", "2 name users", "2 end", "2 show archive config differences"}
+	want := []string{"2 configure terminal revert timer 5", "2 vlan 10", "2 name users", "2 end",
+		"2 show archive config differences flash:archive-Oct-28-12-00-00.000-0 system:running-config"}
 	if i := slices.Index(log, want[0]); i < 0 || !slices.Equal(log[i:i+len(want)], want) {
 		t.Fatalf("apply session: %q", log)
 	}
