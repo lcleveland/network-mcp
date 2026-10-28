@@ -383,3 +383,15 @@ func TestChangeConfirmUnverified(t *testing.T) {
 		t.Fatal("save after an unverified confirm")
 	}
 }
+
+func TestChangeApplySubmodePrompt(t *testing.T) {
+	e, dev := startChange(t, setup{allowConfig: true, rules: []config.Rule{writeRule}})
+	out, errText := e.call(t, "network_change", plan("ip dhcp pool users", "dns-server 192.0.2.53"))
+	if errText != "" {
+		t.Fatal(errText)
+	}
+	out, errText = e.call(t, "network_change", map[string]any{"action": "apply", "plan_id": out["plan_id"], "reason": "r"})
+	if errText != "" || out["outcome"] != "applied" || !strings.Contains(dev.Config(), " dns-server 192.0.2.53") {
+		t.Fatalf("apply in (dhcp-config)#: %v %s", out, errText)
+	}
+}

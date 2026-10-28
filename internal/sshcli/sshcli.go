@@ -335,12 +335,12 @@ func (s *Session) run(ctx context.Context, cmd string, q *regexp.Regexp) (string
 }
 
 // isPrompt is the session's prompt, or its config-mode form such as
-// "dev1(config-if)#" while a change is applied.
+// "dev1(config-if)#" or "dev1(dhcp-config)#" while a change is applied.
 // shortcut: assumes config mode keeps the whole hostname; check on hardware.
 func (s *Session) isPrompt(l string) bool {
 	l = strings.TrimSpace(l)
 	base, priv := strings.CutSuffix(s.prompt, "#")
-	mode, cfg := strings.CutPrefix(l, base+"(config")
+	mode, cfg := strings.CutPrefix(l, base+"(")
 	return l == s.prompt || priv && cfg && strings.HasSuffix(mode, ")#") && !strings.ContainsAny(mode, " \t")
 }
 

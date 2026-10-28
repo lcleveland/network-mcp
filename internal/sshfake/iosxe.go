@@ -215,6 +215,8 @@ func configLine(running *string, errs map[string]string, mode *string, cmd strin
 		*running += ind + cmd + "\n"
 		if f := strings.Fields(cmd)[0]; f == "interface" || f == "vlan" || f == "router" || f == "archive" {
 			*mode = "config-" + map[string]string{"interface": "if", "vlan": "vlan", "router": "router", "archive": "archive"}[f]
+		} else if strings.HasPrefix(cmd, "ip dhcp pool ") {
+			*mode = "dhcp-config" // not every submode starts with "config"
 		}
 	}
 	return ""
